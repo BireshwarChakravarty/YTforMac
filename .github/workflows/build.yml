@@ -1,0 +1,39 @@
+name: Build Encore
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install Metal toolchain (for the shader check)
+        continue-on-error: true
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Check Metal shaders
+        run: ./Scripts/check-shaders.sh
+
+      - name: Build Encore.app (universal)
+        run: UNIVERSAL=1 DMG=1 ./Scripts/build-app.sh
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Encore-macOS
+          path: |
+            dist/Encore.zip
+            dist/Encore.dmg
+          if-no-files-found: error

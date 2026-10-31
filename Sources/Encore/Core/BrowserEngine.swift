@@ -77,16 +77,18 @@ final class BrowserEngine: NSObject {
     private(set) var isSignedIn = false
     private(set) var avatarURL: URL?
 
-    @ObservationIgnored let webView: WKWebView
-    @ObservationIgnored var onPlayRequest: ((URL) -> Void)?
-    @ObservationIgnored private let settings: AppSettings
-    @ObservationIgnored private let proxy = ScriptMessageProxy()
+    let webView: WKWebView
+    @ObservationIgnored var onPlayRequest: (@MainActor (URL) -> Void)?
+    private let settings: AppSettings
+    private let proxy: ScriptMessageProxy
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var lastPlay: (key: String, at: Date)?
     @ObservationIgnored private var didInitialLoad = false
 
     init(settings: AppSettings) {
         self.settings = settings
+        let proxy = ScriptMessageProxy()
+        self.proxy = proxy
         let initial = "window.__encoreInitialClean = \(settings.cleanYouTubeChrome);"
         let config = WebKitFactory.makeConfiguration(
             scripts: [Scripts.baseStyle, initial, Scripts.browser],

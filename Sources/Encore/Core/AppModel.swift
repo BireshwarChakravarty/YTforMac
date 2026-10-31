@@ -11,7 +11,7 @@ final class AppModel {
     let settings = AppSettings.shared
     let player: PlayerEngine
     let browser: BrowserEngine
-    @ObservationIgnored let visualizer = VisualizerEngine()
+    let visualizer = VisualizerEngine()
     @ObservationIgnored private(set) var nowPlaying: NowPlayingCenter!
 
     /// The selected sidebar destination in the main window.
@@ -93,6 +93,23 @@ final class AppModel {
         play(url)
         showToast("Playing link from clipboard", symbol: "link")
     }
+
+    func copyCurrentLink() {
+        guard player.hasMedia else { return }
+        var link = "https://youtu.be/\(player.videoId)"
+        let seconds = Int(player.position())
+        if seconds > 5, !player.isLive { link += "?t=\(seconds)" }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link, forType: .string)
+        showToast("Link copied", symbol: "link")
+    }
+
+    // MARK: Web navigation (acts on whichever page is showing)
+
+    private var browsing: Bool { destination != .nowPlaying }
+    func goBack() { browsing ? browser.goBack() : player.webView.goBack() }
+    func goForward() { browsing ? browser.goForward() : player.webView.goForward() }
+    func reload() { browsing ? browser.reload() : player.webView.reload() }
 
     static func youtubeURL(in text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

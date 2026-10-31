@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2d1246"/><stop offset=".55" stop-color="#170a26"/><stop offset="1" stop-color="#0a0510"/></linearGradient>
+    <radialGradient id="glow" cx=".42" cy=".5" r=".5"><stop offset="0" stop-color="#ff3d8b" stop-opacity=".55"/><stop offset="1" stop-color="#ff3d8b" stop-opacity="0"/></radialGradient>
+    <linearGradient id="mark" x1=".15" y1=".1" x2=".95" y2=".9"><stop offset="0" stop-color="#ff7a59"/><stop offset=".5" stop-color="#f0388f"/><stop offset="1" stop-color="#8d55ff"/></linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".14"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity=".45"/></filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="22"/></filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  </g>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)"/>
+  <g opacity=".7" filter="url(#soft)">
+    <path d="M290 340 L290 684 L560 512 Z" fill="url(#mark)" stroke="url(#mark)" stroke-width="64" stroke-linejoin="round"/>
+  </g>
+  <path d="M290 340 L290 684 L560 512 Z" fill="url(#mark)" stroke="url(#mark)" stroke-width="64" stroke-linejoin="round"/>
+  <path d="M605 352 A260 260 0 0 1 605 672" fill="none" stroke="url(#mark)" stroke-width="46" stroke-linecap="round"/>
+  <path d="M676 297 A350 350 0 0 1 676 727" fill="none" stroke="url(#mark)" stroke-width="46" stroke-linecap="round" opacity=".55"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="3"/>
+</svg>

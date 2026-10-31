@@ -44,23 +44,23 @@ final class PlayerEngine: NSObject {
 
     // MARK: Collaborators
 
-    @ObservationIgnored let webView: WKWebView
-    @ObservationIgnored var onBrowseRequest: ((URL) -> Void)?
-    @ObservationIgnored var onStateChange: (() -> Void)?
-    @ObservationIgnored var onVisualizerFrame: (([UInt8], UInt8) -> Void)?
-    @ObservationIgnored private let settings: AppSettings
+    let webView: WKWebView
+    @ObservationIgnored var onBrowseRequest: (@MainActor (URL) -> Void)?
+    @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
+    @ObservationIgnored var onVisualizerFrame: (@MainActor ([UInt8], UInt8) -> Void)?
+    private let settings: AppSettings
     @ObservationIgnored private var lastTransport: (kind: String, at: Date) = ("", .distantPast)
     @ObservationIgnored private var artworkTask: Task<Void, Never>?
     @ObservationIgnored private var lastSaved = Date.distantPast
     @ObservationIgnored private var visualizerDemand = 0
-    @ObservationIgnored private let proxy: ScriptMessageProxy
+    private let proxy: ScriptMessageProxy
 
     init(settings: AppSettings) {
         self.settings = settings
         let proxy = ScriptMessageProxy()
         self.proxy = proxy
         let config = WebKitFactory.makeConfiguration(
-            scripts: [Scripts.visibilitySpoof, Scripts.baseStyle, Self.initialSettingsScript(settings), Scripts.player],
+            scripts: [Scripts.visibilitySpoof, Scripts.baseStyle, PlayerEngine.initialSettingsScript(settings), Scripts.player],
             handler: proxy,
             backgroundPlayback: true
         )

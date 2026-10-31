@@ -91,7 +91,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
 /* ---------- Audio mode ---------- */
 .ambient { position: absolute; inset: -80px; background-size: cover; background-position: center; filter: blur(70px) saturate(1.5); opacity: .55; transform: scale(1.1); transition: background-image .6s; }
 .ambient-shade { position: absolute; inset: 0; background: radial-gradient(70% 60% at 50% 38%, rgba(8,7,12,.15), rgba(8,7,12,.82) 75%), linear-gradient(to bottom, rgba(8,7,12,.2), rgba(8,7,12,.85)); }
-#vizCanvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#vizCanvas, #glCanvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#glCanvas { opacity: 0; transition: opacity .4s; }
+#glCanvas.on { opacity: 1; }
 .np-meta { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 36px 26px; display: grid; grid-template-columns: minmax(0,1fr) 400px minmax(0,1fr); align-items: end; gap: 24px; }
 .np-title { min-width: 0; }
 .np-title .pill { display: inline-flex; gap: 6px; align-items: center; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid var(--line); color: var(--ink-2); }
@@ -111,7 +113,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
 .ctl.play { width: 62px; height: 62px; background: white; color: #120d18; opacity: 1; box-shadow: 0 10px 34px rgba(0,0,0,.35), 0 0 40px color-mix(in srgb, var(--p2) 55%, transparent); }
 .ctl.play svg { width: 26px; height: 26px; }
 .np-right { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
-.styles { position: absolute; top: 18px; left: 20px; display: flex; gap: 4px; background: rgba(10,8,16,.5); border: 1px solid var(--line); padding: 4px; border-radius: 12px; backdrop-filter: blur(16px); }
+.styles { position: absolute; top: 18px; left: 20px; max-width: 520px; flex-wrap: wrap; display: flex; gap: 4px; background: rgba(10,8,16,.5); border: 1px solid var(--line); padding: 4px; border-radius: 12px; backdrop-filter: blur(16px); }
 .styles button { border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
 .styles button.on { background: rgba(255,255,255,.12); color: var(--ink); }
 .vol { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
@@ -288,6 +290,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
             <div class="view on" id="view-audio">
               <div class="ambient" id="ambient"></div>
               <div class="ambient-shade"></div>
+              <canvas id="glCanvas"></canvas>
               <canvas id="vizCanvas"></canvas>
               <div class="styles" id="styles" role="group" aria-label="Visualiser style"></div>
               <div class="toast" id="toast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg><span id="toastText">Halo</span></div>
@@ -540,7 +543,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
   const mk = $("#mediaKey");
   mk.addEventListener("click", () => { mk.classList.add("pressed"); setTimeout(() => mk.classList.remove("pressed"), 140); act("toggle"); });
 
-  const STYLES = [["halo", "Halo"], ["spectrum", "Spectrum"], ["waves", "Waves"], ["nebula", "Nebula"], ["ridge", "Ridgeline"]];
+  const STYLES = [["halo", "Halo"], ["voxel", "Voxels"], ["tide", "Tide"], ["warp", "Warp"], ["vortex", "Vortex"], ["contour", "Contours"], ["spectrum", "Spectrum"], ["waves", "Waves"], ["nebula", "Nebula"], ["ridge", "Ridgeline"]];
+  const GPU_STYLES = new Set(["voxel", "tide", "warp", "vortex", "contour"]);
   const stylesEl = $("#styles");
   STYLES.forEach(([k, n]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = n; b.dataset.k = k; b.addEventListener("click", () => setStyle(k)); stylesEl.appendChild(b); });
   function setStyle(k) { S.style = k; $$("button", stylesEl).forEach(b => b.classList.toggle("on", b.dataset.k === k)); toast(STYLES.find(s => s[0] === k)[1]); }
@@ -829,6 +833,236 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
     g.fillStyle = lg; g.fillRect(0, 0, w, h); g.globalAlpha = 1; g.globalCompositeOperation = "source-over";
   }
 
+  // ---------- GPU scenes (WebGL2 here; Metal in the Mac app) ----------
+  const GL = (() => {
+    const cv = $("#glCanvas");
+    const gl = cv.getContext("webgl2", { premultipliedAlpha: true, antialias: false, alpha: true, preserveDrawingBuffer: true });
+    if (!gl) return null;
+    const COMMON = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uTime, uBass, uMid, uTreble, uLevel, uPhase, uScroll;
+uniform vec3 uP0, uP1, uP2, uShadow;
+uniform sampler2D uSpec, uHist;
+out vec4 outColor;
+#define PI 3.14159265
+float hash(float n) { return fract(sin(n) * 43758.5453123); }
+float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash2(i), hash2(i + vec2(1, 0)), u.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), u.x), u.y); }
+float fbm(vec2 p) { float v = 0.0, a = 0.5; mat2 m = mat2(1.6, 1.2, -1.2, 1.6); for (int i = 0; i < 5; i++) { v += a * noise(p); p = m * p; a *= 0.5; } return v; }
+vec3 pal(float t) { t = fract(t); float s = t * 3.0; return s < 1.0 ? mix(uP0, uP1, s) : s < 2.0 ? mix(uP1, uP2, s - 1.0) : mix(uP2, uP0, s - 2.0); }
+float spec(float x) { return texture(uSpec, vec2(clamp(x, 0.0, 1.0) * 0.92 + 0.02, 0.5)).r; }
+vec3 tonemap(vec3 c) { c = max(c, 0.0); return c / (1.0 + c * 0.55); }
+`;
+    const VS_QUAD = `#version 300 es
+const vec2 P[3] = vec2[3](vec2(-1,-1), vec2(3,-1), vec2(-1,3));
+void main() { gl_Position = vec4(P[gl_VertexID], 0, 1); }`;
+
+    // 1. VOXELS: extruded block terrain built from the spectrum history, flowing away from the camera.
+    const FS_VOXEL = COMMON + `
+const float HALF = 40.0, DEPTH = 64.0;
+float heightAt(vec2 c) {
+  float fx = abs(c.x + 0.5) / HALF;
+  if (fx > 1.0 || c.y >= DEPTH) return 0.0;
+  float v = texture(uHist, vec2(fx * 0.8 + 0.03, (max(c.y, 0.0) + 0.5) / DEPTH)).r;
+  float h = 0.3 + pow(v, 1.5) * 11.0 * (1.0 - 0.4 * fx) + noise(c * 0.31) * 0.9;
+  return floor(h * 2.0) / 2.0;
+}
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  vec3 ro = vec3(sin(uTime * 0.11) * 4.0, 17.0 + uBass * 0.8, -12.0 - uScroll);
+  vec3 fw = normalize(vec3(0.0, -0.72, 1.0)), rt = normalize(cross(vec3(0, 1, 0), fw)), up = cross(fw, rt);
+  vec3 rd = normalize(fw * 1.05 + rt * uv.x + up * uv.y);
+  vec3 sky = mix(uShadow * 0.6, uP2 * 0.35, smoothstep(-0.3, 0.6, uv.y)) + uP1 * 0.25 * exp(-abs(uv.y - 0.32) * 7.0) * (0.6 + uLevel);
+  vec3 col = sky;
+  vec2 cell = floor(ro.xz), st = sign(rd.xz), dl = abs(1.0 / rd.xz);
+  vec2 tm = (st * (cell - ro.xz) + st * 0.5 + 0.5) * dl;
+  float t = 0.0; vec3 n = vec3(0, 1, 0); bool hit = false; float h = 0.0;
+  for (int i = 0; i < 200; i++) {
+    h = heightAt(cell);
+    float tn = min(tm.x, tm.y);
+    if (ro.y + rd.y * t < h && t > 0.0) { hit = true; break; }
+    if (ro.y + rd.y * tn < h) { t = (h - ro.y) / rd.y; n = vec3(0, 1, 0); hit = true; break; }
+    if (tm.x < tm.y) { t = tm.x; tm.x += dl.x; cell.x += st.x; n = vec3(-st.x, 0, 0); }
+    else { t = tm.y; tm.y += dl.y; cell.y += st.y; n = vec3(0, 0, -st.y); }
+    if (t > 140.0) break;
+  }
+  if (hit) {
+    vec3 p = ro + rd * t;
+    float fx = abs(cell.x + 0.5) / HALF;
+    float e = clamp(h / 8.0, 0.0, 1.0);
+    vec3 base = mix(uShadow * 2.0 + pal(0.7 + fx * 0.2) * 0.1, pal(0.05 + e * 0.75 + fx * 0.15), smoothstep(0.04, 0.6, e));
+    vec3 L = normalize(vec3(-0.5, 0.9, -0.35));
+    float diff = 0.35 + 0.65 * max(dot(n, L), 0.0);
+    vec2 f = n.y > 0.5 ? fract(p.xz) : vec2(n.x != 0.0 ? fract(p.z) : fract(p.x), fract(p.y * 2.0));
+    float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+    float bevel = smoothstep(0.0, 0.07, edge);
+    col = base * diff * (0.55 + 0.45 * bevel);
+    col += pal(0.1 + e * 0.8) * pow(e, 2.2) * (1.4 + uBass * 2.0) * (n.y > 0.5 ? 1.0 : 0.45);
+    col += (1.0 - bevel) * pal(e) * 0.25 * e;
+    float fog = 1.0 - exp(-t * 0.014);
+    col = mix(col, sky, fog);
+  }
+  col *= 1.0 - 0.35 * dot(uv, uv);
+  outColor = vec4(tonemap(col * 1.15), 1.0);
+}`;
+
+    // 2. WARP: a tunnel of light panels lit by the spectrum, speeding up with the bass.
+    const FS_WARP = COMMON + `
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  p += vec2(sin(uTime * 0.3), cos(uTime * 0.23)) * 0.04;
+  float r = length(p), a = atan(p.y, p.x);
+  float seg = a / (2.0 * PI) + 0.5;
+  float z = 0.42 / max(r, 1e-3) + uPhase * 5.0;
+  float cells = 48.0;
+  vec2 g = vec2(seg * cells, z * 1.6);
+  vec2 id = floor(g), f = fract(g);
+  float band = spec(abs(fract(id.x / cells + 0.25) * 2.0 - 1.0));
+  float hz = hash2(id);
+  float lit = smoothstep(0.55 - band * 0.8, 1.0, hz + band * 0.6);
+  float panel = smoothstep(0.0, 0.08, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
+  vec3 c = pal(id.x / cells + z * 0.015) * lit * panel * (0.35 + band * 2.4);
+  float streak = pow(max(0.0, 1.0 - abs(f.x - 0.5) * 6.0), 2.0) * smoothstep(0.86, 1.0, fract(z * 0.35 + hz * 7.0)) * step(0.6, hz);
+  c += vec3(1.0) * streak * (0.6 + uTreble * 2.0);
+  float depthFade = smoothstep(0.02, 0.35, r);
+  c *= depthFade;
+  c += pal(uPhase * 0.05) * (0.25 + uBass * 1.2) * exp(-r * 9.0) + vec3(1.0) * exp(-r * 40.0) * (0.4 + uBass);
+  c *= smoothstep(1.25, 0.25, r) * 0.9 + 0.1;
+  outColor = vec4(tonemap(c * 1.2), 1.0);
+}`;
+
+    // 3. VORTEX: a swirling storm with a calm eye; the arms tighten with the bass.
+    const FS_VORTEX = COMMON + `
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float r = length(p), a = atan(p.y, p.x);
+  float twist = (0.9 + uBass * 1.6) / (r + 0.18);
+  float sw = a + twist + uTime * 0.25;
+  vec2 q = vec2(cos(sw), sin(sw)) * (r * 2.6 + 0.4);
+  float n = fbm(q * 1.4 + vec2(uTime * 0.12, -uTime * 0.07));
+  float n2 = fbm(q * 3.1 - vec2(uTime * 0.2, 0.0) + n * 2.0);
+  float arms = pow(0.5 + 0.5 * sin(sw * 3.0 + n * 5.0 - log(r + 0.01) * 4.0), 3.0);
+  float band = spec(fract(a / (2.0 * PI) + 0.5 + uTime * 0.02) * 0.9);
+  vec3 c = mix(uShadow * 1.2, pal(n * 0.8 + r * 0.4 + uPhase * 0.03), smoothstep(0.25, 0.85, n2));
+  c *= 0.25 + arms * (1.2 + band * 2.2);
+  c += pal(0.6 + n) * pow(n2, 4.0) * 1.8 * (0.5 + uMid);
+  float eye = 0.075 + uBass * 0.05;
+  c *= smoothstep(eye * 0.6, eye * 1.8, r);
+  c += pal(uPhase * 0.04 + 0.3) * exp(-abs(r - eye * 1.5) * 38.0) * (0.8 + uLevel * 2.0);
+  c *= smoothstep(1.3, 0.2, r);
+  outColor = vec4(tonemap(c * 1.25), 1.0);
+}`;
+
+    // 4. CONTOURS: a living topographic map; loud passages push new peaks up from the centre.
+    const FS_CONTOUR = COMMON + `
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float r = length(p), a = atan(p.y, p.x);
+  vec2 q = p * 2.4;
+  float warp = fbm(q * 0.7 + vec2(uTime * 0.03, -uTime * 0.02));
+  float h = fbm(q + warp * 1.6 + vec2(0.0, uTime * 0.04));
+  h += (uBass * 0.55 + 0.1) * exp(-r * r * 4.0);
+  h += spec(fract(a / (2.0 * PI) + 0.5) ) * 0.12 * exp(-r * 2.5);
+  float k = h * 16.0;
+  float fw = fwidth(k);
+  float d = 0.5 - abs(fract(k) - 0.5);
+  float dM = (0.5 - abs(fract(k / 5.0) - 0.5)) * 5.0;
+  float line = 1.0 - smoothstep(fw * 0.4, fw * 1.4, d);
+  float major = 1.0 - smoothstep(fw * 0.7, fw * 2.2, dM);
+  vec3 fill = mix(uShadow * 0.9, pal(h * 0.9 + 0.1) * 0.22, smoothstep(0.2, 0.9, h));
+  vec3 ink = pal(h * 1.1 + uPhase * 0.02);
+  vec3 c = fill + ink * line * (0.55 + uLevel * 0.9) + ink * major * 0.9;
+  c += ink * 0.35 * exp(-r * 3.0) * uBass;
+  c *= 1.0 - 0.45 * dot(p, p);
+  outColor = vec4(tonemap(c * 1.1), 1.0);
+}`;
+
+    // 5. TIDE: a holographic point-cloud sea; rows carry the recent past, columns the frequencies.
+    const VS_TIDE = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform float uTime, uBass, uLevel, uPhase, uScroll, uDpr;
+uniform vec3 uP0, uP1, uP2;
+uniform sampler2D uHist;
+out vec3 vCol; out float vA;
+const float COLS = 180.0, ROWS = 90.0;
+vec3 pal(float t) { t = fract(t); float s = t * 3.0; return s < 1.0 ? mix(uP0, uP1, s) : s < 2.0 ? mix(uP1, uP2, s - 1.0) : mix(uP2, uP0, s - 2.0); }
+void main() {
+  float i = float(gl_VertexID);
+  float cx = mod(i, COLS), cz = floor(i / COLS);
+  float u = cx / (COLS - 1.0), w = (cz + uScroll) / ROWS;
+  float fx = abs(u * 2.0 - 1.0);
+  float v = texture(uHist, vec2(fx * 0.8 + 0.03, clamp(w, 0.0, 1.0))).r;
+  float x = (u - 0.5) * 34.0;
+  float z = w * 60.0 + 3.0;
+  float y = sin(x * 0.35 + uTime * 0.9 + z * 0.12) * 0.6 + sin(z * 0.25 - uTime * 0.7) * 0.5;
+  y += v * v * 7.0 * (1.0 - fx * 0.5);
+  vec3 cam = vec3(0.0, 6.5, -2.0);
+  vec3 pw = vec3(x, y, z) - cam;
+  float pitch = 0.42; float cp = cos(pitch), sp = sin(pitch);
+  vec3 pc = vec3(pw.x, pw.y * cp + pw.z * sp, -pw.y * sp + pw.z * cp);
+  float f = 1.3;
+  gl_Position = vec4(pc.x * f / (uRes.x / uRes.y), pc.y * f, pc.z * 0.01, pc.z);
+  float depth = clamp(1.0 - w, 0.0, 1.0);
+  gl_PointSize = max(1.0, (1.2 + v * 2.5) * uDpr * (0.6 + depth * 1.4));
+  vCol = mix(pal(0.6 + u * 0.3), pal(0.05 + v * 0.7), smoothstep(0.05, 0.6, v)) * (0.5 + v * 1.8 + uBass * 0.4);
+  vA = depth * (0.35 + v * 0.9);
+}`;
+    const FS_TIDE = `#version 300 es
+precision highp float;
+in vec3 vCol; in float vA; out vec4 outColor;
+void main() { vec2 d = gl_PointCoord - 0.5; float m = smoothstep(0.5, 0.15, length(d)); outColor = vec4(vCol * m * vA, m * vA); }`;
+
+    function compile(vs, fs) {
+      const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; } return s; };
+      const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(p)); return null; }
+      return p;
+    }
+    const progs = { voxel: compile(VS_QUAD, FS_VOXEL), warp: compile(VS_QUAD, FS_WARP), vortex: compile(VS_QUAD, FS_VORTEX), contour: compile(VS_QUAD, FS_CONTOUR), tide: compile(VS_TIDE, FS_TIDE) };
+    const vao = gl.createVertexArray();
+    const mkTex = (w, h) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, null); return t; };
+    const SW = 64, HR = 64;
+    const specTex = mkTex(SW, 1), histTex = mkTex(SW, HR);
+    const specData = new Uint8Array(SW), hist = new Uint8Array(SW * HR);
+    let scroll = 0, lastPush = 0;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+
+    function render(style, now) {
+      const p = progs[style]; if (!p) return false;
+      const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+      const scale = Math.min(1, 900 / Math.max(1, r.width)); // keep fill-rate sane
+      const w = Math.max(1, Math.round(r.width * dpr * scale)), h = Math.max(1, Math.round(r.height * dpr * scale));
+      if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+      // spectrum + history (newest row at index 0 = nearest the camera)
+      for (let i = 0; i < SW; i++) { const x = i / (SW - 1) * (N - 1), i0 = Math.floor(x), f = x - i0; specData[i] = Math.min(255, (E.bands[i0] * (1 - f) + E.bands[Math.min(N - 1, i0 + 1)] * f) * 255); }
+      const rate = 1 / 18; scroll = Math.min(1, scroll + (now - (render.last || now)) / 1000 / rate); render.last = now;
+      if (scroll >= 1) { hist.copyWithin(SW, 0, SW * (HR - 1)); hist.set(specData, 0); scroll = 0; }
+      gl.bindTexture(gl.TEXTURE_2D, specTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SW, 1, gl.RED, gl.UNSIGNED_BYTE, specData);
+      gl.bindTexture(gl.TEXTURE_2D, histTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SW, HR, gl.RED, gl.UNSIGNED_BYTE, hist);
+      gl.viewport(0, 0, w, h); gl.clearColor(0, 0, 0, style === "tide" ? 0 : 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(p); gl.bindVertexArray(vao);
+      const U = n => gl.getUniformLocation(p, n);
+      gl.uniform2f(U("uRes"), w, h); gl.uniform1f(U("uTime"), now / 1000);
+      const mid = (E.bands[20] + E.bands[26] + E.bands[32]) / 3, tre = (E.bands[42] + E.bands[48] + E.bands[54]) / 3;
+      gl.uniform1f(U("uBass"), E.bass); gl.uniform1f(U("uMid"), mid); gl.uniform1f(U("uTreble"), tre);
+      gl.uniform1f(U("uLevel"), E.level); gl.uniform1f(U("uPhase"), E.phase); gl.uniform1f(U("uScroll"), scroll); gl.uniform1f(U("uDpr"), dpr * scale);
+      const c = k => pal[k].map(v => v / 255);
+      gl.uniform3fv(U("uP0"), c(0)); gl.uniform3fv(U("uP1"), c(1)); gl.uniform3fv(U("uP2"), c(2));
+      gl.uniform3fv(U("uShadow"), mixC(pal[2], [6, 4, 12], .88).map(v => v / 255));
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, specTex); gl.uniform1i(U("uSpec"), 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, histTex); gl.uniform1i(U("uHist"), 1);
+      if (style === "tide") { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.drawArrays(gl.POINTS, 0, 180 * 90); gl.disable(gl.BLEND); }
+      else gl.drawArrays(gl.TRIANGLES, 0, 3);
+      return true;
+    }
+    return { render, cv };
+  })();
+
   // ---------- Render loop ----------
   const cvViz = $("#vizCanvas"), cvBar = $("#barCanvas"), cvPop = $("#popCanvas"), cvVid = $("#videoCanvas");
   const eqSpans = $$("#sideEq span");
@@ -846,7 +1080,10 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--magent
 
     if (S.view === "audio") {
       const [g, w, h] = prep(cvViz); g.clearRect(0, 0, w, h);
-      if (S.style === "halo") drawHalo(g, w, h, t);
+      const gpu = GPU_STYLES.has(S.style) && GL && GL.render(S.style, now);
+      GL && GL.cv.classList.toggle("on", !!gpu);
+      if (gpu) { /* drawn on the GPU canvas */ }
+      else if (S.style === "halo") drawHalo(g, w, h, t);
       else if (S.style === "spectrum") drawSpectrum(g, w, h, { count: 76, baseline: h * .5, maxH: h * .34 });
       else if (S.style === "waves") drawWaves(g, w, h, t);
       else if (S.style === "nebula") drawNebula(g, w, h, t, dt);

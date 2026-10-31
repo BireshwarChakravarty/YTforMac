@@ -10,24 +10,63 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case halo, spectrum, waves, nebula
+    case halo, voxels, tide, warp, vortex, contours, spectrum, waves, nebula, ridgeline
     var id: String { rawValue }
     var title: String {
         switch self {
         case .halo: return "Halo"
+        case .voxels: return "Voxels"
+        case .tide: return "Tide"
+        case .warp: return "Warp"
+        case .vortex: return "Vortex"
+        case .contours: return "Contours"
         case .spectrum: return "Spectrum"
         case .waves: return "Waves"
         case .nebula: return "Nebula"
+        case .ridgeline: return "Ridgeline"
         }
     }
     var symbol: String {
         switch self {
         case .halo: return "circle.dashed"
+        case .voxels: return "cube.fill"
+        case .tide: return "circle.grid.3x3.fill"
+        case .warp: return "scope"
+        case .vortex: return "tornado"
+        case .contours: return "map.fill"
         case .spectrum: return "chart.bar.fill"
         case .waves: return "water.waves"
         case .nebula: return "sparkles"
+        case .ridgeline: return "mountain.2.fill"
         }
     }
+    /// Short description shown in the picker.
+    var caption: String {
+        switch self {
+        case .halo: return "Artwork ringed by light"
+        case .voxels: return "3D block terrain"
+        case .tide: return "Holographic point sea"
+        case .warp: return "Light-speed tunnel"
+        case .vortex: return "Storm with a calm eye"
+        case .contours: return "Living topographic map"
+        case .spectrum: return "Glowing mirrored bars"
+        case .waves: return "Aurora ribbons"
+        case .nebula: return "Particle burst"
+        case .ridgeline: return "Scrolling sound ridges"
+        }
+    }
+    /// GPU scenes are rendered with Metal; the rest use SwiftUI Canvas.
+    var metalScene: MetalScene? {
+        switch self {
+        case .voxels: return .voxels
+        case .tide: return .tide
+        case .warp: return .warp
+        case .vortex: return .vortex
+        case .contours: return .contours
+        default: return nil
+        }
+    }
+    var isGPU: Bool { metalScene != nil }
     var next: VisualizerStyle {
         let all = Self.allCases
         return all[(all.firstIndex(of: self)! + 1) % all.count]
@@ -69,7 +108,6 @@ enum VisualizerColorSource: String, CaseIterable, Identifiable, Codable {
 final class AppSettings {
     static let shared = AppSettings()
 
-    @ObservationIgnored private let defaults = UserDefaults.standard
 
     var mode: PlaybackMode { didSet { save(mode.rawValue, "mode") } }
     var visualizerStyle: VisualizerStyle { didSet { save(visualizerStyle.rawValue, "visualizerStyle") } }
