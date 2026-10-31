@@ -22,6 +22,8 @@ enum DebugSnapshots {
             if args.contains("--demo-visuals") { model.visualizer.forceDemo = true }
             try? await Task.sleep(for: .seconds(2))
             fitMainWindow()
+            try? await Task.sleep(for: .seconds(1))
+            fitMainWindow()
             try? await Task.sleep(for: .seconds(wait))
             await logPage(model)
             log(model, "initial")
@@ -70,7 +72,8 @@ enum DebugSnapshots {
     /// CI displays are small; a window larger than the screen cannot be captured.
     private static var mainWindow: NSWindow? {
         NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true })
-            ?? NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible }.max(by: { $0.frame.width < $1.frame.width })
+            ?? NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible && $0.frame.minX > -10000 && $0.styleMask.contains(.titled) }
+                .max(by: { $0.frame.width < $1.frame.width })
     }
 
     private static func fitMainWindow() {

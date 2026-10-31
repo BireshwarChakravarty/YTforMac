@@ -8,14 +8,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppModel.shared.start()
         observeWindows()
+        // Safety net: make sure the main window is up, then let the parking
+        // window take over background duties.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            MainActor.assumeIsolated {
+                Self.ensureMainWindow()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    MainActor.assumeIsolated { WebViewParking.shared.activate() }
+                }
+            }
+        }
     }
 
     /// Closing the window must never stop the music.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Let SwiftUI reopen the main window when the Dock icon is clicked.
-        true
+        // The invisible parking window counts as "visible", so reopen explicitly.
+        if !NSApp.windows.contains(where: { Self.isMainWindow($0) && $0.isVisible }) {
+            Self.ensureMainWindow()
+            return false
+        }
+        return true
+    }
+
+    static func ensureMainWindow() {
+        if let window = NSApp.windows.first(where: { isMainWindow($0) }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            AppModel.shared.openMainWindow?()
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -88,6 +88,7 @@ struct MenuBarView: View {
 /// The icon (and optional title) shown in the menu bar.
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let player = model.player
@@ -96,6 +97,9 @@ struct MenuBarLabel: View {
             if model.settings.showTitleInMenuBar, player.hasMedia {
                 Text(String(player.title.prefix(24)) + (player.title.count > 24 ? "…" : ""))
             }
+        }
+        .onAppear {
+            if model.openMainWindow == nil { model.openMainWindow = { openWindow(id: "main") } }
         }
     }
 }

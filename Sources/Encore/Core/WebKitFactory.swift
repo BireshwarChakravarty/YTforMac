@@ -106,9 +106,19 @@ final class WebViewParking {
         window.collectionBehavior = [.stationary, .ignoresCycle, .transient, .canJoinAllSpaces]
         window.isExcludedFromWindowsMenu = true
         window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 720))
-        window.orderFrontRegardless()
+        if isActive { window.orderFrontRegardless() }
         return window
     }()
+
+    /// The parking window is only ordered in after launch: a window that is
+    /// already on screen during launch stops SwiftUI from opening the main window.
+    private(set) var isActive = false
+
+    func activate() {
+        guard !isActive else { return }
+        isActive = true
+        window.orderFrontRegardless()
+    }
 
     /// Hosts that currently want to display a given web view, most recent last.
     private var hosts: [ObjectIdentifier: [WeakHost]] = [:]

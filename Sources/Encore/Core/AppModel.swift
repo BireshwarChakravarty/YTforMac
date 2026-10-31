@@ -21,6 +21,8 @@ final class AppModel {
     var toast: Toast?
 
     @ObservationIgnored private var toastTask: Task<Void, Never>?
+    /// Captured from SwiftUI so AppKit code (Dock, launch) can open the main window.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
 
     private init() {
         player = PlayerEngine(settings: AppSettings.shared)
