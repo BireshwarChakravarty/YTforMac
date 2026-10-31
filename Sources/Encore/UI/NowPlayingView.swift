@@ -23,7 +23,7 @@ struct NowPlayingView: View {
                     )
                     .ignoresSafeArea()
 
-                if let error = player.playerError {
+                if let error = player.playerError, !model.visualizer.forceDemo {
                     PlayerProblemCard(message: error)
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
@@ -47,40 +47,44 @@ struct NowPlayingView: View {
 
     private var bottomPanel: some View {
         let player = model.player
-        return HStack(alignment: .bottom, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                StatusPill()
-                Text(player.title.isEmpty ? "Loading…" : player.title)
-                    .font(Theme.Fonts.display(28))
-                    .lineLimit(2)
-                    .shadow(color: .black.opacity(0.4), radius: 10)
-                Text(player.isAd ? "Advertisement" : player.author)
-                    .font(Theme.Fonts.title(15))
-                    .foregroundStyle(Theme.Palette.textSecondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        return VStack(spacing: 18) {
+            HStack(alignment: .bottom, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    StatusPill().fixedSize()
+                    Text(player.title.isEmpty ? "Loading…" : player.title)
+                        .font(Theme.Fonts.display(28))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .shadow(color: .black.opacity(0.4), radius: 10)
+                    if !player.author.isEmpty || player.isAd {
+                        Text(player.isAd ? "Advertisement" : player.author)
+                            .font(Theme.Fonts.title(15))
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
 
-            VStack(spacing: 14) {
+                HStack(spacing: 4) {
+                    IconButton(symbol: "pip.enter", size: 14, help: "Mini player") { MiniPlayerController.shared.toggle() }
+                    IconButton(symbol: "link", size: 14, help: "Copy link") { model.copyCurrentLink() }
+                    VolumeControl(width: 100).padding(.leading, 6)
+                }
+                .fixedSize()
+            }
+
+            VStack(spacing: 12) {
                 ScrubberView()
                 TransportControls(size: .large, showSkips: true)
             }
-            .frame(width: 420)
-
-            VStack(alignment: .trailing, spacing: 12) {
-                HStack(spacing: 4) {
-                    IconButton(symbol: "pip.enter", size: 14, help: "Mini player") { MiniPlayerController.shared.toggle() }
-                    IconButton(symbol: "square.and.arrow.up", size: 14, help: "Copy link") { model.copyCurrentLink() }
-                }
-                VolumeControl()
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(maxWidth: 560)
         }
         .padding(.horizontal, 36)
-        .padding(.bottom, 28)
-        .padding(.top, 60)
+        .padding(.bottom, 26)
+        .padding(.top, 70)
         .background(
-            LinearGradient(colors: [.clear, Theme.Palette.background.opacity(0.75)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.clear, Theme.Palette.background.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
         )
     }

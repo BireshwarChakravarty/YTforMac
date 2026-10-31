@@ -50,7 +50,7 @@ struct MainView: View {
                 .disabled(!canGoForward)
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            ModePicker()
+            ModePicker().fixedSize()
             if model.destination == .nowPlaying && model.settings.mode == .video && model.player.hasMedia {
                 Button {
                     model.settings.cinemaLayout.toggle()

@@ -32,13 +32,14 @@ struct PlayerBar: View {
             }
             .buttonStyle(.plain)
             .help("Open Now Playing")
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             VStack(spacing: 2) {
                 TransportControls(size: .small)
                 ScrubberView(compact: true)
             }
-            .frame(width: 380)
+            .frame(minWidth: 220, idealWidth: 380, maxWidth: 380)
 
             HStack(spacing: 12) {
                 MiniSpectrumView(bars: 22)
