@@ -203,7 +203,8 @@ fragment float4 swarmBackground(QuadOut in [[stage_in]],
     float3 c = u.shadow.rgb * 0.5;
     float3 ro = swarmCamera(u.time);
     float3 fw = normalize(-ro), rt = normalize(cross(float3(0, 1, 0), fw)), up = cross(fw, rt);
-    float3 rd = normalize(fw * 1.6 + rt * uv.x + up * uv.y);
+    // Same projection as swarmVertex: clip = 1.6·v/z ⇔ uv = 0.8·v/z (uv is in half-height units).
+    float3 rd = normalize(fw * 0.8 + rt * uv.x + up * uv.y);
     for (int k = 0; k < 3; k++) {
         float3 oc = orbCenter(k, u.time);
         float s = spec(specTex, float(k) * 0.28 + 0.03);
