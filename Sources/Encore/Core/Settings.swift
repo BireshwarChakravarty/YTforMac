@@ -10,15 +10,17 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case aurora, silk, orb, tide, halo, spectrum, waves, ridgeline
+    case flow, swarm, ambient, halo, aurora, orb, tide, spectrum, waves, ridgeline
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .flow: return "Flow"
+        case .swarm: return "Swarm"
+        case .ambient: return "Ambient"
+        case .halo: return "Halo"
         case .aurora: return "Aurora"
-        case .silk: return "Silk"
         case .orb: return "Orb"
         case .tide: return "Tide"
-        case .halo: return "Halo"
         case .spectrum: return "Spectrum"
         case .waves: return "Waves"
         case .ridgeline: return "Ridgeline"
@@ -26,11 +28,13 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     }
     var symbol: String {
         switch self {
-        case .aurora: return "sparkles"
-        case .silk: return "wind"
+        case .flow: return "tornado"
+        case .swarm: return "sparkles"
+        case .ambient: return "paintpalette.fill"
+        case .halo: return "circle.dashed"
+        case .aurora: return "moon.stars.fill"
         case .orb: return "circle.circle.fill"
         case .tide: return "water.waves"
-        case .halo: return "circle.dashed"
         case .spectrum: return "waveform"
         case .waves: return "alternatingcurrent"
         case .ridgeline: return "mountain.2.fill"
@@ -39,21 +43,27 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     /// Short description shown in the picker.
     var caption: String {
         switch self {
+        case .flow: return "Rivers of light from the spectrum"
+        case .swarm: return "Particles orbiting glowing cores"
+        case .ambient: return "The artwork as a living painting"
+        case .halo: return "Artwork ringed by the spectrum"
         case .aurora: return "Northern lights that rise with the music"
-        case .silk: return "Slow, flowing colour"
         case .orb: return "A glass sphere that breathes"
         case .tide: return "A calm sea of light"
-        case .halo: return "Artwork in soft, glowing rings"
         case .spectrum: return "A smooth, mirrored waveform"
         case .waves: return "Gentle ribbons of light"
         case .ridgeline: return "Sound drawn as distant hills"
         }
     }
-    /// GPU scenes are rendered with Metal; the rest use SwiftUI Canvas.
+    /// GPU scenes run through the Metal pipeline (feedback, bloom, tonemapping);
+    /// the minimal ones use SwiftUI Canvas.
     var metalScene: MetalScene? {
         switch self {
+        case .flow: return .flow
+        case .swarm: return .swarm
+        case .ambient: return .ambient
+        case .halo: return .halo
         case .aurora: return .aurora
-        case .silk: return .silk
         case .orb: return .orb
         case .tide: return .tide
         default: return nil
@@ -152,7 +162,7 @@ final class AppSettings {
             defaults.object(forKey: key) == nil ? fallback : defaults.double(forKey: key)
         }
         mode = string("mode", PlaybackMode.video)
-        visualizerStyle = string("visualizerStyle", VisualizerStyle.aurora)
+        visualizerStyle = string("visualizerStyle", VisualizerStyle.flow)
         visualizerColors = string("visualizerColors", VisualizerColorSource.artwork)
         visualizerSensitivity = double("visualizerSensitivity", 1.0)
         visualizerUsesAudio = bool("visualizerUsesAudio", true)

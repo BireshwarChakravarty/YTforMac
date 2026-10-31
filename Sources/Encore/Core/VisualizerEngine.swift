@@ -26,6 +26,18 @@ final class VisualizerEngine {
     private(set) var isLive = false
 
     var isPlaying = false
+
+    /// Beat pulse, 1 on a detected onset and decaying to 0 (spectral flux with an adaptive threshold).
+    private(set) var beat: Float = 0
+    /// Bass / mid / treble, 0…1, relative to the song's recent average (MilkDrop-style),
+    /// so the visuals follow changes in the music at any volume.
+    private(set) var bassNorm: Float = 0
+    private(set) var midNorm: Float = 0
+    private(set) var trebleNorm: Float = 0
+    private var avg = SIMD3<Float>(0.15, 0.1, 0.06)
+    private var prevTarget = [Float](repeating: 0, count: VisualizerEngine.bandCount)
+    private var fluxMean: Float = 0.02
+    private var lastBeat: CFTimeInterval = 0
     /// State of the system-audio tap feeding real spectrum data.
     var audioStatus: AudioTap.Status = .idle
     /// Debug/demo: animate as if playing (used by `--snapshot` on CI, where nothing can play).
@@ -49,6 +61,23 @@ final class VisualizerEngine {
         }
         targetLevel = min(1, Float(level) / 255 * 1.4 * sensitivity)
         lastFrame = CACurrentMediaTime()
+        detectBeat(now: lastFrame)
+    }
+
+    /// Spectral-flux onset detection on the low and low-mid bands.
+    private func detectBeat(now: CFTimeInterval) {
+        var flux: Float = 0
+        for i in 0..<14 {
+            let d = target[i] - prevTarget[i]
+            if d > 0 { flux += d * (i < 6 ? 1.4 : 0.8) }
+        }
+        prevTarget = target
+        let threshold = fluxMean * 1.7 + 0.04
+        if flux > threshold, now - lastBeat > 0.22 {
+            lastBeat = now
+            beat = max(beat, min(1, 0.55 + (flux - threshold) * 4))
+        }
+        fluxMean += (flux - fluxMean) * 0.06
     }
 
     /// Advances the simulation. Safe to call several times per frame (from
@@ -81,6 +110,23 @@ final class VisualizerEngine {
         let lvlGoal = isPlaying ? max(targetLevel, bands.reduce(0, +) / Float(Self.bandCount) * 1.4) : 0.02
         level += (lvlGoal - level) * (1 - exp(-dt * 6))
         phase += Double(dt) * (0.25 + Double(level) * 1.6)
+
+        // Relative band energies (≈1 at the song's recent average).
+        func mean(_ r: Range<Int>) -> Float { var s: Float = 0; for i in r { s += bands[i] }; return s / Float(r.count) }
+        let raw = SIMD3<Float>(mean(0..<6), mean(10..<30), mean(34..<Self.bandCount))
+        let k = 1 - exp(-dt / 3)
+        avg += (raw - avg) * k
+        func norm(_ x: Float, _ a: Float) -> Float {
+            let rel = x / max(a, 0.02)
+            return isPlaying ? max(0, min(1, 0.45 * (rel - 0.6) + 0.7 * x)) : 0
+        }
+        let goals = SIMD3<Float>(norm(raw.x, avg.x), norm(raw.y, avg.y), norm(raw.z, avg.z))
+        func ease(_ v: Float, _ g: Float) -> Float { v + (g - v) * (g > v ? 1 - exp(-dt * 18) : 1 - exp(-dt * 5)) }
+        bassNorm = ease(bassNorm, goals.x)
+        midNorm = ease(midNorm, goals.y)
+        trebleNorm = ease(trebleNorm, goals.z)
+        beat *= exp(-dt * 4.5)
+        if !isPlaying { beat = 0 }
     }
 
     /// Low, breathing motion while paused so the scene still feels alive.
@@ -94,6 +140,7 @@ final class VisualizerEngine {
         let bpm = 112.0
         let beat = t * bpm / 60
         let kick = pow(max(0, 1 - (beat - floor(beat)) * 2.6), 2.2)
+        if (beat - floor(beat)) < 0.05, t - lastBeat > 0.3 { lastBeat = t; self.beat = 0.8 }
         let snare = pow(max(0, 1 - abs((beat + 0.5).truncatingRemainder(dividingBy: 2) - 1) * 3.5), 2)
         for i in 0..<Self.bandCount {
             let x = Double(i) / Double(Self.bandCount)

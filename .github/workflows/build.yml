@@ -66,7 +66,7 @@ jobs:
           done
           system_profiler SPAudioDataType 2>/dev/null | head -20
           open --stdout "$SHOTS/run.log" --stderr "$SHOTS/run.log" -a "$PWD/dist/Encore.app" --args \
-              --play "$VIDEO" --mode audio --visualizer aurora --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals --test-tone
+              --play "$VIDEO" --mode audio --visualizer flow --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals --test-tone
           for i in $(seq 1 200); do
             grep -q SNAPSHOTS-DONE "$SHOTS/run.log" 2>/dev/null && break
             pgrep -x Encore >/dev/null || { echo "❌ Encore exited early"; break; }

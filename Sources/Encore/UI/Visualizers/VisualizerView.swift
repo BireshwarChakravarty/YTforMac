@@ -15,7 +15,7 @@ struct VisualizerView: View {
         Group {
             if let scene = style.metalScene, MetalContext.shared.library != nil {
                 MetalSceneView(scene: scene, visualizer: model.visualizer, palette: palette,
-                               maxPixelWidth: compact ? 900 : 2000)
+                               artwork: model.player.artwork, maxPixelWidth: compact ? 900 : 2000)
             } else {
                 TimelineView(.animation) { timeline in
                     Canvas { ctx, size in
@@ -34,7 +34,7 @@ struct VisualizerView: View {
     private func draw(_ ctx: inout GraphicsContext, size: CGSize, time t: Double) {
         let e = model.visualizer
         switch style {
-        case .aurora, .silk, .orb, .tide, .halo:
+        case .flow, .swarm, .ambient, .halo, .aurora, .orb, .tide:
             // GPU styles fall back to Halo if Metal is unavailable.
             CanvasPainter.halo(&ctx, size: size, engine: e, state: state, artwork: model.player.artwork, time: t, compact: compact)
         case .spectrum:
