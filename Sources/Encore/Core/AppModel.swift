@@ -55,6 +55,7 @@ final class AppModel {
         if let i = args.firstIndex(of: "--show"), i + 1 < args.count, let d = Destination(rawValue: args[i + 1]) {
             select(d)
         }
+        DebugSnapshots.runIfRequested(model: self)
     }
 
     /// Command-line options, handy from Terminal and for automated checks:

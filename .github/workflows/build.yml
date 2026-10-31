@@ -38,32 +38,30 @@ jobs:
             dist/Encore.dmg
           if-no-files-found: error
 
-      - name: Smoke test (launch, play, screenshot)
+      - name: Smoke test (launch, play, capture Encore's windows)
         timeout-minutes: 8
         run: |
           set +e
-          APP="$PWD/dist/Encore.app"
           SHOTS="$PWD/dist/screens"; mkdir -p "$SHOTS"
           VIDEO="https://www.youtube.com/watch?v=aqz-KE-bpKQ"   # Big Buck Bunny (Blender Foundation, CC BY 3.0)
-          shot() {
-            name="$1"; shift
-            "$APP/Contents/MacOS/Encore" "$@" > "$SHOTS/$name.log" 2>&1 &
-            pid=$!
-            sleep 28
-            if kill -0 $pid 2>/dev/null; then echo "✅ $name: running"; else echo "❌ $name: exited"; cat "$SHOTS/$name.log"; fi
-            screencapture -x "$SHOTS/$name.png"
-            sips -Z 1400 -s format jpeg -s formatOptions 55 "$SHOTS/$name.png" --out "$SHOTS/$name.jpg" >/dev/null
-            echo "::group::$name.jpg (base64)"
-            echo "BEGIN-SHOT $name"; base64 -i "$SHOTS/$name.jpg" | tr -d '\n'; echo; echo "END-SHOT $name"
-            echo "::endgroup::"
-            grep -iE "error|fail|metal" "$SHOTS/$name.log" | head -20
-            kill $pid 2>/dev/null; sleep 2; kill -9 $pid 2>/dev/null
-          }
-          shot audio-voxels --play "$VIDEO" --mode audio --visualizer voxels
-          shot audio-halo --play "$VIDEO" --mode audio --visualizer halo
-          shot video --play "$VIDEO" --mode video
-          shot browse --play "$VIDEO" --mode audio --show home
-          ls -la ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i encore && cat ~/Library/Logs/DiagnosticReports/Encore* | head -80
+          "$PWD/dist/Encore.app/Contents/MacOS/Encore" --play "$VIDEO" --mode audio --visualizer voxels \
+              --snapshot "$SHOTS" --snapshot-wait 25 > "$SHOTS/run.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 150); do
+            grep -q SNAPSHOTS-DONE "$SHOTS/run.log" && break
+            kill -0 $PID 2>/dev/null || { echo "❌ Encore exited early"; break; }
+            sleep 2
+          done
+          grep -E "STATE|SNAPSHOT|rror" "$SHOTS/run.log" | head -60
+          kill -0 $PID 2>/dev/null && echo "✅ Encore still running" 
+          kill $PID 2>/dev/null; sleep 1; kill -9 $PID 2>/dev/null
+          for f in "$SHOTS"/*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            sips -Z 1300 -s format jpeg -s formatOptions 50 "$f" --out "$SHOTS/$n.jpg" >/dev/null
+            echo "BEGIN-SHOT $n"; base64 -i "$SHOTS/$n.jpg" | tr -d '\n'; echo; echo "END-SHOT $n"
+          done
+          ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i encore && head -120 ~/Library/Logs/DiagnosticReports/Encore*
           exit 0
 
       - name: Upload screenshots
