@@ -167,6 +167,7 @@ final class AppSettings {
     var effectiveQuality: VideoQuality { mode == .audio ? audioModeQuality : videoQuality }
 
     private func save(_ value: Any?, _ key: String) {
+        let defaults = UserDefaults.standard
         if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
 }

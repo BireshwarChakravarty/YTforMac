@@ -107,9 +107,9 @@ final class AppModel {
     // MARK: Web navigation (acts on whichever page is showing)
 
     private var browsing: Bool { destination != .nowPlaying }
-    func goBack() { browsing ? browser.goBack() : player.webView.goBack() }
-    func goForward() { browsing ? browser.goForward() : player.webView.goForward() }
-    func reload() { browsing ? browser.reload() : player.webView.reload() }
+    func goBack() { if browsing { browser.goBack() } else { player.webView.goBack() } }
+    func goForward() { if browsing { browser.goForward() } else { player.webView.goForward() } }
+    func reload() { if browsing { browser.reload() } else { player.webView.reload() } }
 
     static func youtubeURL(in text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

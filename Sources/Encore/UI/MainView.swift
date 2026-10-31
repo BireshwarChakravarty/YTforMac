@@ -68,8 +68,8 @@ struct MainView: View {
     private var browsing: Bool { model.destination != .nowPlaying }
     private var canGoBack: Bool { browsing ? model.browser.canGoBack : model.player.webView.canGoBack }
     private var canGoForward: Bool { browsing ? model.browser.canGoForward : model.player.webView.canGoForward }
-    private func goBack() { browsing ? model.browser.goBack() : model.player.webView.goBack() }
-    private func goForward() { browsing ? model.browser.goForward() : model.player.webView.goForward() }
+    private func goBack() { model.goBack() }
+    private func goForward() { model.goForward() }
 }
 
 /// Keeps both web views mounted (so neither ever reloads) and layers the
