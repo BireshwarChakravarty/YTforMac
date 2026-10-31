@@ -308,16 +308,19 @@ private struct SingAlongCover: View {
     var body: some View {
         let player = model.player
         VStack(alignment: .leading, spacing: 14) {
-            Group {
-                if let art = player.artwork {
-                    Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    LinearGradient(colors: player.palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .overlay(Image(systemName: "music.note").font(.system(size: 54, weight: .bold)).foregroundStyle(.white.opacity(0.8)))
+            // A square card; wide video thumbnails are cropped to fit.
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    if let art = player.artwork {
+                        Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        LinearGradient(colors: player.palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                            .overlay(Image(systemName: "music.note").font(.system(size: 54, weight: .bold)).foregroundStyle(.white.opacity(0.8)))
+                    }
                 }
-            }
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: player.palette.shadow.opacity(0.8), radius: 30, y: 14)
             .shadow(color: player.palette.primary.opacity(0.25), radius: 40)
             VStack(alignment: .leading, spacing: 4) {

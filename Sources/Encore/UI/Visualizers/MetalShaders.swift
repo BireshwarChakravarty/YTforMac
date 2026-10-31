@@ -617,9 +617,9 @@ static float4 wavesScene(float2 fc, constant Uniforms &u, texture2d<float> specT
     float w2 = (0.016 + 0.030 * n2) * energy;
     float w3 = (0.05 + 0.07 * n3) * (0.65 + 0.6 * u.level);
     float3 col = float3(0.0);
-    col += glowColor(a + t * 0.050) * exp(-d / w1) * 1.0;
-    col += glowColor(a - t * 0.035 + 0.33) * exp(-d / w2) * 0.55;
-    col += glowColor(a + t * 0.020 + 0.66) * exp(-d / w3) * 0.16;
+    col += glowColor(a + t * 0.050) * exp(-d / w1) * 1.5;
+    col += glowColor(a - t * 0.035 + 0.33) * exp(-d / w2) * 0.85;
+    col += glowColor(a + t * 0.020 + 0.66) * exp(-d / w3) * 0.24;
     col += float3(1.0) * exp(-d / (w1 * 0.35)) * 0.12;
     // translucent lobes in the centre
     float x = p.x / (0.5 * aspect);
