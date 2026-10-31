@@ -47,8 +47,32 @@ final class AppModel {
     func start() {
         applyAppearance()
         browser.loadInitialIfNeeded()
-        player.restoreLastSession()
+        if !applyLaunchArguments() {
+            player.restoreLastSession()
+        }
         if player.hasMedia { destination = .nowPlaying }
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--show"), i + 1 < args.count, let d = Destination(rawValue: args[i + 1]) {
+            select(d)
+        }
+    }
+
+    /// Command-line options, handy from Terminal and for automated checks:
+    ///   open -a Encore --args --play <youtube-url> --mode audio|video --visualizer <style>
+    /// Returns true when a URL was played.
+    private func applyLaunchArguments() -> Bool {
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        if let m = value("--mode").flatMap(PlaybackMode.init(rawValue:)) { settings.mode = m }
+        if let v = value("--visualizer").flatMap(VisualizerStyle.init(rawValue:)) { settings.visualizerStyle = v }
+        if let s = value("--play"), let url = Self.youtubeURL(in: s), PlayerEngine.isPlayable(url) {
+            player.load(url)
+            return true
+        }
+        return false
     }
 
     // MARK: Navigation
