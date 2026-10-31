@@ -6,6 +6,19 @@ Media keys always work, even with every window closed. Video and audio modes, te
 
 ---
 
+<p align="center">
+  <img src="docs/screenshots/audio-voxels.jpg" width="49%" alt="Audio mode with the Voxels visualiser">
+  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Audio mode with the Halo visualiser">
+  <img src="docs/screenshots/audio-tide.jpg" width="49%" alt="Audio mode with the Tide visualiser">
+  <img src="docs/screenshots/audio-vortex.jpg" width="49%" alt="Audio mode with the Vortex visualiser">
+</p>
+<p align="center">
+  <img src="docs/screenshots/audio-warp.jpg" width="49%" alt="Audio mode with the Warp visualiser">
+  <img src="docs/screenshots/audio-contours.jpg" width="49%" alt="Audio mode with the Contours visualiser">
+</p>
+<p align="center"><img src="docs/screenshots/menu-bar.jpg" width="300" alt="Menu bar player"></p>
+<p align="center"><sub>Real captures of Encore on macOS 26. They were taken by the CI smoke test on a small virtual display, with the visualisers in demo mode, because YouTube won't stream to datacenter machines. Colours come from the video's artwork.</sub></p>
+
 ## Why Encore exists
 
 If you play YouTube in Safari, pause with the ⏯ key and press it again later, macOS often sends the key somewhere else. You have to bring Safari forward before playback resumes.
@@ -40,7 +53,13 @@ Encore fixes that:
 | Next visualiser | ⇧⌘V |
 | Mini player | ⇧⌘P |
 | Play link from clipboard | ⌘L |
+| Copy link at current time | ⇧⌘C |
 | Now Playing, Home, Subscriptions… | ⌘0 … ⌘7 |
+
+From Terminal, you can launch straight into something:
+```bash
+open -a Encore --args --play "https://youtu.be/VIDEO_ID" --mode audio --visualizer voxels
+```
 
 ## Install
 
@@ -65,6 +84,12 @@ INSTALL=1 ./Scripts/build-app.sh
 Other options: `UNIVERSAL=1` builds for Apple silicon and Intel, and `DMG=1` also writes `dist/Encore.dmg`.
 
 To work on it in Xcode, open `Package.swift`.
+
+## Good to know
+
+- **Sign in** using the account button at the bottom of the sidebar to get your home feed, subscriptions and history. Signed out, YouTube's home page is mostly empty.
+- If YouTube ever shows a sign-in wall or an error while you're in audio mode, Encore shows a card with **Show Video Page**, **Sign In** and **Retry** buttons.
+- Encore keeps running after you close its window, because that's what keeps the media keys working. Use ⌘Q, or **Quit** in the menu bar player, to stop it completely.
 
 ## How it works
 
