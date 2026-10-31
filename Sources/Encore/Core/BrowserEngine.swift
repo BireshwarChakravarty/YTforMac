@@ -235,9 +235,9 @@ extension BrowserEngine: WKNavigationDelegate, WKUIDelegate {
             NSWorkspace.shared.open(Self.unwrapRedirect(url))
             return .cancel
         }
-        let internal = host.hasSuffix("youtube.com") || host.hasSuffix("google.com") || host.hasSuffix("youtube-nocookie.com")
+        let isInternal = host.hasSuffix("youtube.com") || host.hasSuffix("google.com") || host.hasSuffix("youtube-nocookie.com")
             || host.hasSuffix("gstatic.com") || host.hasSuffix("googleusercontent.com") || host.isEmpty
-        if !internal, navigationAction.navigationType == .linkActivated {
+        if !isInternal, navigationAction.navigationType == .linkActivated {
             // Outbound links (descriptions, about pages) open in the default browser.
             NSWorkspace.shared.open(url)
             return .cancel

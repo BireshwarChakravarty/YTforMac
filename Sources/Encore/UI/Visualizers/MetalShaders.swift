@@ -30,7 +30,6 @@ struct Uniforms {
 
 constexpr sampler linearSampler(coord::normalized, address::clamp_to_edge, filter::linear);
 
-static float hash1(float n) { return fract(sin(n) * 43758.5453123); }
 static float hash2(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
 static float noise2(float2 p) {
     float2 i = floor(p), f = fract(p);
