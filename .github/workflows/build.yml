@@ -52,7 +52,7 @@ jobs:
             kill -0 $PID 2>/dev/null || { echo "❌ Encore exited early"; break; }
             sleep 2
           done
-          grep -E "STATE|SNAPSHOT|rror" "$SHOTS/run.log" | head -60
+          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|rror" "$SHOTS/run.log" | head -80
           kill -0 $PID 2>/dev/null && echo "✅ Encore still running" 
           kill $PID 2>/dev/null; sleep 1; kill -9 $PID 2>/dev/null
           for f in "$SHOTS"/*.png; do

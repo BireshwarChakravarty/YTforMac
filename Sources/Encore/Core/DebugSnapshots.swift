@@ -68,9 +68,19 @@ enum DebugSnapshots {
     }
 
     /// CI displays are small; a window larger than the screen cannot be captured.
+    private static var mainWindow: NSWindow? {
+        NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true })
+            ?? NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible }.max(by: { $0.frame.width < $1.frame.width })
+    }
+
     private static func fitMainWindow() {
-        guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }),
-              let screen = window.screen ?? NSScreen.main else { return }
+        for w in NSApp.windows {
+            print("WINLIST id=\(w.identifier?.rawValue ?? "nil") class=\(type(of: w)) visible=\(w.isVisible) frame=\(w.frame) number=\(w.windowNumber)")
+        }
+        guard let window = mainWindow, let screen = window.screen ?? NSScreen.main else {
+            print("WINDOW none found")
+            return
+        }
         let visible = screen.visibleFrame
         let size = NSSize(width: min(1280, visible.width - 20), height: min(800, visible.height - 20))
         window.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
@@ -97,8 +107,7 @@ enum DebugSnapshots {
     }
 
     private static func captureMain(_ dir: URL, _ name: String) async {
-        guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true && $0.isVisible })
-            ?? NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 600 }) else {
+        guard let window = mainWindow else {
             print("SNAPSHOT \(name): no main window (\(NSApp.windows.map { $0.identifier?.rawValue ?? "?" }))")
             return
         }
@@ -119,7 +128,15 @@ enum DebugSnapshots {
             config.width = Int(scWindow.frame.width * scale)
             config.height = Int(scWindow.frame.height * scale)
             config.showsCursor = false
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            let image: CGImage
+            do {
+                image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            } catch {
+                print("SNAPSHOT \(name): retrying at 1x after \(error.localizedDescription) frame=\(scWindow.frame) onScreen=\(scWindow.isOnScreen)")
+                config.width = Int(scWindow.frame.width)
+                config.height = Int(scWindow.frame.height)
+                image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            }
             let url = dir.appendingPathComponent("\(name).png")
             if let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) {
                 CGImageDestinationAddImage(dest, image, nil)
