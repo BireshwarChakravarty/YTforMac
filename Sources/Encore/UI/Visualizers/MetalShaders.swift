@@ -170,8 +170,8 @@ fragment float4 orbFragment(QuadOut in [[stage_in]],
                             texture2d<float> specTex [[texture(0)]],
                             texture2d<float> hist [[texture(1)]]) {
     float2 fc = fragCoord(in.position, u);
-    float2 uv = (fc - 0.5 * u.res) / u.res.y;
-    float R = 0.62 + u.bass * 0.05;
+    float2 uv = (fc - 0.5 * u.res) / u.res.y - float2(0.0, 0.1);   // sit above the title
+    float R = 0.5 + u.bass * 0.045;
     float3 ro = float3(0.0, 0.0, 3.0), rd = normalize(float3(uv, -1.7));
     float3 bg = u.shadow.rgb * 1.0 + pal(u, 0.66) * 0.07 * exp(-length(uv) * 1.4) * (0.7 + u.level);
     for (int i = 0; i < 3; i++) {

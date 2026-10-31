@@ -251,16 +251,16 @@ enum CanvasPainter {
             g.fill(ribbon, with: .linearGradient(
                 Gradient(stops: [
                     .init(color: c.color(0), location: 0),
-                    .init(color: c.color(0.32), location: 0.45),
-                    .init(color: c.color(0.5), location: 0.62),
+                    .init(color: c.color(0.2), location: 0.45),
+                    .init(color: c.color(0.3), location: 0.62),
                     .init(color: c.color(0), location: 1),
                 ]), startPoint: CGPoint(x: 0, y: cy - amp), endPoint: CGPoint(x: 0, y: cy + amp * 0.6)))
             var crest = Path()
             smooth(&crest, top, move: true)
-            g.stroke(crest, with: .color(c.color(0.75)), lineWidth: 1.4)
+            g.stroke(crest, with: .color(c.color(0.55)), lineWidth: 1.2)
         }
         g.fill(Path(CGRect(x: 0, y: cy - 1, width: w, height: 2)), with: .linearGradient(
-            Gradient(colors: [.clear, .white.opacity(0.12 + Double(e.level) * 0.25), .clear]),
+            Gradient(colors: [.clear, .white.opacity(0.05 + Double(e.level) * 0.12), .clear]),
             startPoint: CGPoint(x: 0, y: cy), endPoint: CGPoint(x: w, y: cy)))
     }
 
