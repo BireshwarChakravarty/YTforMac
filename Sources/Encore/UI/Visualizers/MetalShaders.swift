@@ -109,7 +109,10 @@ fragment float4 feedbackFragment(QuadOut in [[stage_in]],
                                  texture2d<float> sceneTex [[texture(0)]],
                                  texture2d<float> prevTex [[texture(1)]]) {
     float2 uv = in.position.xy / pp.outSize;
-    float3 sc = sceneTex.sample(linearSampler, uv).rgb;
+    // Clamp HDR: dense additive particles can otherwise overflow half floats to
+    // infinity, which tonemaps to black.
+    float3 sc = clamp(sceneTex.sample(linearSampler, uv).rgb, 0.0, 48.0);
+    if (any(isnan(sc))) sc = float3(0.0);
     float3 prev = float3(0.0);
     if (pp.decay > 0.0) {
         float aspect = pp.outSize.x / pp.outSize.y;
@@ -122,7 +125,7 @@ fragment float4 feedbackFragment(QuadOut in [[stage_in]],
         prev = prevTex.sample(linearSampler, c + 0.5).rgb;
         prev = max(prev * pp.decay - 0.0015, 0.0);
     }
-    return float4(mix(sc + prev, max(sc, prev), pp.maxMode), 1.0);
+    return float4(min(mix(sc + prev, max(sc, prev), pp.maxMode), 48.0), 1.0);
 }
 
 fragment float4 brightFragment(QuadOut in [[stage_in]],
@@ -244,10 +247,10 @@ vertex PointOut swarmVertex(uint vid [[vertex_id]],
     float3 v = float3(dot(q, rt), dot(q, up), dot(q, fw));
     PointOut o;
     o.position = float4(v.x * 1.6 / (u.res.x / u.res.y), v.y * 1.6, v.z * 0.05, v.z);
-    o.pointSize = max(1.5, 7.0 / v.z) * u.dpr;
+    o.pointSize = clamp(7.0 / max(v.z, 0.1), 1.5, 12.0) * u.dpr;
     float3 col = mix(pal(u, float(k) * 0.33 + 0.05), pal(u, float(k) * 0.33 + 0.35), h1);
     col = mix(col, float3(1.0), e * e * 0.35);
-    o.color = col * (0.12 + 1.1 * e * e + 0.3 * u.beat) * (2.4 / (v.z * 0.5 + 0.3)) / (u.dpr * u.dpr);
+    o.color = min(col * (0.12 + 1.1 * e * e + 0.3 * u.beat) * (2.4 / (max(v.z, 0.5) * 0.5 + 0.3)) / (u.dpr * u.dpr), 2.0);
     return o;
 }
 

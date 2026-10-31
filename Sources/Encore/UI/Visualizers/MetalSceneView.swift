@@ -31,14 +31,14 @@ enum MetalScene: String {
             return Config(fragment: "flowFragment", decay: 0.965, zoom: 1.012, zoomBass: 0.018, rot: 0.0045, warp: 0.9,
                           threshold: 0.6, bloom: 0.9, exposure: 1.0)
         case .ambient:
-            return Config(fragment: "ambientFragment", threshold: 0.9, bloom: 0.5, exposure: 1.05, usesArtwork: true)
+            return Config(fragment: "ambientFragment", threshold: 0.9, bloom: 0.5, exposure: 1.15, usesArtwork: true)
         case .aurora:
-            return Config(fragment: "auroraFragment", threshold: 0.5, bloom: 0.9, exposure: 1.15)
+            return Config(fragment: "auroraFragment", threshold: 0.7, bloom: 0.7, exposure: 0.85)
         case .halo:
             return Config(fragment: "haloFragment", decay: 0.9, zoom: 1.008, maxMode: 1,
                           threshold: 0.55, bloom: 0.9, exposure: 1.05, usesArtwork: true)
         case .orb:
-            return Config(fragment: "orbFragment", threshold: 0.65, bloom: 0.9, exposure: 1.1)
+            return Config(fragment: "orbFragment", threshold: 0.85, bloom: 0.6, exposure: 0.9)
         case .tide:
             return Config(background: "tideBackground", pointVertex: "tideVertex", pointCount: 220 * 110,
                           decay: 0.6, maxMode: 1, threshold: 0.6, bloom: 0.9, exposure: 1.1)
