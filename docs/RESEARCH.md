@@ -52,3 +52,15 @@ The most thoughtful native client, though it covers YouTube Music only and needs
 | Mini player / PiP | Clicker | A floating panel that adopts the live player view |
 | Two web views | new | Browsing never interrupts playback |
 | Audio mode | new | The video is hidden while the stream stays at the highest quality for the best audio; a 144p data saver is optional |
+
+## Visualiser research (round 2)
+
+What separates premium visualisers from cheap ones:
+
+- **Feedback trails (MilkDrop / Butterchurn).** Each frame is drawn into the next through a warp (zoom, rotation and sinusoidal displacement) with a decay of about 0.98, using `(prev - 0.002) * 0.99` style fading. Butterchurn uses ping-pong framebuffers, a 48×36 warp mesh and three blur levels. → Encore's feedback pass, used by **Flow** (add mode) and by **Swarm**, **Halo** and **Tide** (max mode, so trails don't lift the background).
+- **Additive glow and particles that listen individually (Magnetosphere by Robert Hodgin).** Every particle is tied to its own FFT frequency. Particles orbit spinning orbs under attract, repel and rotational forces, and additive blending makes them glow. Version 2.0 runs millions of particles in GLSL, with orbs drawn in the shader and radiant bursts on beats. Hodgin notes that losing reliable beat detection made the iTunes port feel less responsive. → **Swarm**: 60,000 particles orbit three spinning cores, each particle driven by its own band, with Kepler-like speeds and beat bursts.
+- **Album-art ambience (Apple Music).** Colours are sampled from the artwork, then the art is warped and heavily blurred into a moving mesh gradient. → **Ambient** samples the real artwork through domain-warped coordinates at low mip levels.
+- **Film-style post-processing.** HDR rendering with a soft-knee bloom (dual-filter down/up chain), an ACES tonemap, a vignette, subtle chromatic aberration that spikes on beats, and grain or dither to avoid banding.
+- **Audio mapping.** MilkDrop's `bass/mid/treb` values sit around 1.0 at the song's recent average, with attenuated `_att` variants. → Encore's band levels are relative to a 3-second average. Beats come from spectral flux on the low bands with an adaptive threshold (1.7 × running mean + 0.04, at most one beat every 220 ms), and fast-attack, slow-release easing.
+
+Sources: geisswerks.com MilkDrop preset authoring guide; github.com/jberg/butterchurn (renderer.js, visualizer.js); roberthodgin.com (Magnetosphere, Magnetosphere 2.0, Dust); synesthesia.live.

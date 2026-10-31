@@ -110,7 +110,7 @@ jobs:
             dist/Encore.zip
           body: |
             **Encore** is a native YouTube player for macOS. Media keys always work, even with every window closed.
-            It has video and audio modes at the highest available quality, eight calm visualisers that move with the music (four rendered with Metal), a menu bar player and a floating mini player.
+            It has video and audio modes at the highest available quality, ten visualisers that move with the music, a menu bar player and a floating mini player. Seven of the visualisers run on a film-style Metal pipeline with light trails, bloom and beat detection: Flow, Swarm, Ambient, Halo, Aurora, Orb and Tide.
 
             ### Install
             1. Download **Encore.dmg** below, open it and drag Encore to Applications.

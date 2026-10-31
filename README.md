@@ -2,19 +2,17 @@
 
 <h1 align="center">Encore</h1>
 <p align="center"><b>A native YouTube player for macOS.</b><br>
-Media keys always work, even with every window closed. Video and audio modes at the highest quality YouTube offers, eight calm visualisers that move with the music, a menu bar player and a floating mini player.</p>
+Media keys always work, even with every window closed. Video and audio modes at the highest quality YouTube offers, ten visualisers that move with the music, a menu bar player and a floating mini player.</p>
 
 ---
 
 <p align="center">
-  <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Audio mode with the Aurora visualiser">
-  <img src="docs/screenshots/audio-silk.jpg" width="49%" alt="Audio mode with the Silk visualiser">
-  <img src="docs/screenshots/audio-orb.jpg" width="49%" alt="Audio mode with the Orb visualiser">
-  <img src="docs/screenshots/audio-tide.jpg" width="49%" alt="Audio mode with the Tide visualiser">
-</p>
-<p align="center">
-  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Audio mode with the Halo visualiser">
-  <img src="docs/screenshots/audio-spectrum.jpg" width="49%" alt="Audio mode with the Spectrum visualiser">
+  <img src="docs/screenshots/audio-flow.jpg" width="49%" alt="Flow visualiser">
+  <img src="docs/screenshots/audio-swarm.jpg" width="49%" alt="Swarm visualiser">
+  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Halo visualiser">
+  <img src="docs/screenshots/audio-ambient.jpg" width="49%" alt="Ambient visualiser">
+  <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Aurora visualiser">
+  <img src="docs/screenshots/audio-orb.jpg" width="49%" alt="Orb visualiser">
   <img src="docs/screenshots/video-mode.jpg" width="49%" alt="Video mode with the details drop-down">
 </p>
 <p align="center"><img src="docs/screenshots/menu-bar.jpg" width="300" alt="Menu bar player"></p>
@@ -36,7 +34,7 @@ Encore fixes that:
 |---|---|
 | **Video mode** | The video fills the window (cinema layout). Toggle back to the full YouTube page for comments and descriptions. |
 | **Audio mode** | Hides the video and keeps streaming at the highest quality YouTube offers, which brings its best audio too. A 144p data saver is available if you want it. The screen shows a full-bleed visualiser over a blurred backdrop taken from the video's artwork. |
-| **8 visualisers** | **GPU (Metal):** Aurora, Silk, Orb, Tide. **2D (SwiftUI Canvas):** Halo, Spectrum, Waves, Ridgeline. All of them follow a live frequency analysis of the sound Encore is playing, take their colours from the artwork, and move calmly. A badge shows **Live audio** or **Simulated**. |
+| **10 visualisers** | **GPU (Metal):** Flow, Swarm, Ambient, Halo, Aurora, Orb, Tide. **Minimal (Canvas):** Spectrum, Waves, Ridgeline. The GPU scenes share a film-style pipeline: feedback light trails (MilkDrop's technique), HDR bloom, ACES tonemapping, a vignette and subtle grain. Beat detection and band levels relative to the song's own average drive the motion. Colours come from the artwork, and a badge shows **Live audio** or **Simulated**. |
 | **Menu bar player** | Artwork, a live mini spectrum, scrubber, controls, the Video/Audio switch and volume. Optionally shows the track title in the menu bar. |
 | **Mini player** | A floating, always-on-top panel (⇧⌘P). It shows the video in video mode and the visualiser in audio mode. |
 | **Your YouTube** | Sign in once to get your home feed, subscriptions, history, Watch Later, liked videos and playlists. Native search with suggestions. You can paste any YouTube link. |
