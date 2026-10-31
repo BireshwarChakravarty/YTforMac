@@ -26,6 +26,8 @@ final class VisualizerEngine {
     private(set) var isLive = false
 
     var isPlaying = false
+    /// Debug/demo: animate as if playing (used by `--snapshot` on CI, where nothing can play).
+    var forceDemo = false
     var sensitivity: Float = 1
 
     private var target = [Float](repeating: 0, count: VisualizerEngine.bandCount)
@@ -56,6 +58,7 @@ final class VisualizerEngine {
         guard dt > 0.0005 else { return }
 
         isLive = now - lastFrame < 0.4
+        let isPlaying = self.isPlaying || forceDemo
         if !isLive {
             synthesize(time: now)
         }

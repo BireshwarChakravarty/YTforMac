@@ -19,6 +19,7 @@ enum DebugSnapshots {
 
         Task { @MainActor in
             NSApp.activate(ignoringOtherApps: true)
+            if args.contains("--demo-visuals") { model.visualizer.forceDemo = true }
             try? await Task.sleep(for: .seconds(2))
             fitMainWindow()
             try? await Task.sleep(for: .seconds(wait))

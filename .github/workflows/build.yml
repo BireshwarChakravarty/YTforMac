@@ -45,7 +45,7 @@ jobs:
           SHOTS="$PWD/dist/screens"; mkdir -p "$SHOTS"
           VIDEO="https://www.youtube.com/watch?v=aqz-KE-bpKQ"   # Big Buck Bunny (Blender Foundation, CC BY 3.0)
           "$PWD/dist/Encore.app/Contents/MacOS/Encore" --play "$VIDEO" --mode audio --visualizer voxels \
-              --snapshot "$SHOTS" --snapshot-wait 25 > "$SHOTS/run.log" 2>&1 &
+              --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals > "$SHOTS/run.log" 2>&1 &
           PID=$!
           for i in $(seq 1 150); do
             grep -q SNAPSHOTS-DONE "$SHOTS/run.log" && break
