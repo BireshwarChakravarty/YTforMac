@@ -104,9 +104,9 @@ final class AudioTap: @unchecked Sendable {
 
     @available(macOS 14.2, *)
     private func createTap(objects: [AudioObjectID], pids: [pid_t]) {
-        let description = CATapDescription(stereoMixdownOfProcesses: objects.map { NSNumber(value: $0) })
+        let description = CATapDescription(stereoMixdownOfProcesses: objects)
         description.uuid = UUID()
-        description.muteBehavior = .unmuted
+        // Default mute behaviour is "unmuted": the tap only listens.
         description.isPrivate = true
         description.name = "Encore Visualiser"
 
