@@ -97,7 +97,7 @@ struct PointOut {
 };
 
 fragment float4 pointFragment(PointOut in [[stage_in]], float2 pc [[point_coord]]) {
-    float m = smoothstep(0.5, 0.05, length(pc - 0.5));
+    float m = (1.0 - smoothstep(0.05, 0.5, length(pc - 0.5)));
     return float4(in.color * m, 1.0);
 }
 
@@ -180,7 +180,7 @@ fragment float4 compositeFragment(QuadOut in [[stage_in]],
     col *= pp.exposure;
     col = aces(col);
     col = pow(col, float3(1.0 / 1.12));
-    float vig = smoothstep(1.15, 0.25, length(d * float2(1.0, 0.9)));
+    float vig = (1.0 - smoothstep(0.25, 1.15, length(d * float2(1.0, 0.9))));
     col *= mix(0.55, 1.0, vig);
     col += (hash2(in.position.xy + fract(u.time) * 91.0) - 0.5) * (2.5 / 255.0);
     return float4(col, 1.0);
@@ -212,7 +212,7 @@ fragment float4 swarmBackground(QuadOut in [[stage_in]],
         float tca = dot(L, rd);
         float d = sqrt(max(dot(L, L) - tca * tca, 0.0));
         float3 col = pal(u, float(k) * 0.33 + 0.05);
-        c += col * exp(-d / (R * 2.5)) * (0.25 + 0.7 * s) + mix(col, float3(1.0), 0.6) * smoothstep(R, R * 0.5, d) * 1.2;
+        c += col * exp(-d / (R * 2.5)) * (0.4 + 1.0 * s) + mix(col, float3(1.0), 0.6) * (1.0 - smoothstep(R * 0.5, R, d)) * 2.2;
     }
     return float4(c, 1.0);
 }
@@ -344,7 +344,7 @@ fragment float4 auroraFragment(QuadOut in [[stage_in]],
     float hill = 0.16 + 0.045 * gnoise(float2(x0 * 1.6, 1.0)) + 0.015 * gnoise(float2(x0 * 8.0, 4.0));
     col *= 2.0 * (0.85 + 0.3 * u.beat);
     float3 c = sky + col;
-    float land = smoothstep(hill + 0.002, hill - 0.002, uv.y);
+    float land = (1.0 - smoothstep(hill - 0.002, hill + 0.002, uv.y));
     c = mix(c, u.shadow.rgb * 0.3 + col * 0.05, land);
     return float4(c, 1.0);
 }
@@ -369,13 +369,13 @@ fragment float4 haloFragment(QuadOut in [[stage_in]],
     float len = 0.015 + s * 0.20;
     float aDist = abs(fa - centerA) * 2.0 * M_PI_F * r;
     float px = 1.0 / u.res.y;
-    float inBar = smoothstep(0.004 + px, 0.0015, aDist) * smoothstep(R + 0.012, R + 0.02, r) * smoothstep(R + 0.024 + len, R + 0.02 + len, r);
+    float inBar = (1.0 - smoothstep(0.0015, 0.004 + px, aDist)) * smoothstep(R + 0.012, R + 0.02, r) * (1.0 - smoothstep(R + 0.02 + len, R + 0.024 + len, r));
     col += pal(u, seg * 0.6 + u.phase * 0.03) * inBar * (0.8 + 2.0 * s);
     col += pal(u, 0.1) * exp(-abs(r - R - 0.008) * 160.0) * (0.6 + 1.2 * u.level);
     if (r < R) {
         float2 auv = float2(uv.x, -uv.y) / (2.0 * R) + 0.5;
         float3 art = artTex.sample(artSampler, auv, level(0)).rgb;
-        float edge = smoothstep(R, R - 0.004, r);
+        float edge = (1.0 - smoothstep(R - 0.004, R, r));
         col = mix(col, art * (0.9 + 0.2 * u.beat), edge);
     }
     return float4(col, 1.0);
@@ -408,7 +408,7 @@ fragment float4 orbFragment(QuadOut in [[stage_in]],
         float2 id = floor(g); float2 f = fract(g) - 0.5;
         float h = hash2(id + fi * 7.0);
         float2 o = float2(hash2(id + 1.3), hash2(id + 2.7)) - 0.5;
-        bg += pal(u, h) * smoothstep(0.05, 0.0, length(f - o * 0.7)) * step(0.86, h) * (0.4 + 0.6 * u.treble);
+        bg += pal(u, h) * (1.0 - smoothstep(0.0, 0.05, length(f - o * 0.7))) * step(0.86, h) * (0.4 + 0.6 * u.treble);
     }
     float t = 0.0, minD = 10.0;
     bool hit = false;
