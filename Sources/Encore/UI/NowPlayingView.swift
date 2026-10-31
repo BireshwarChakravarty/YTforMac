@@ -124,26 +124,31 @@ struct AmbientBackground: View {
 
     var body: some View {
         let player = model.player
-        ZStack {
-            Theme.Palette.background
-            if let art = player.artwork {
-                Image(nsImage: art)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .scaleEffect(1.3)
-                    .blur(radius: 80)
-                    .saturation(1.5)
-                    .opacity(0.55)
-                    .transition(.opacity)
-                    .id(player.videoId)
-            } else {
-                RadialGradient(colors: [player.palette.secondary.opacity(0.35), .clear], center: .top, startRadius: 0, endRadius: 600)
+        // The artwork lives in an overlay so its aspect-fill size never affects layout.
+        Theme.Palette.background
+            .overlay {
+                ZStack {
+                    if let art = player.artwork {
+                        Image(nsImage: art)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .scaleEffect(1.3)
+                            .blur(radius: 80)
+                            .saturation(1.5)
+                            .opacity(0.55)
+                            .transition(.opacity)
+                            .id(player.videoId)
+                    } else {
+                        RadialGradient(colors: [player.palette.secondary.opacity(0.35), .clear], center: .top, startRadius: 0, endRadius: 600)
+                    }
+                }
             }
-            RadialGradient(colors: [Theme.Palette.background.opacity(0.1), Theme.Palette.background.opacity(0.85)],
-                           center: UnitPoint(x: 0.5, y: 0.38), startRadius: 50, endRadius: 700)
-        }
-        .clipped()
-        .animation(.easeInOut(duration: 0.8), value: player.videoId)
+            .overlay {
+                RadialGradient(colors: [Theme.Palette.background.opacity(0.1), Theme.Palette.background.opacity(0.85)],
+                               center: UnitPoint(x: 0.5, y: 0.38), startRadius: 50, endRadius: 700)
+            }
+            .clipped()
+            .animation(.easeInOut(duration: 0.8), value: player.videoId)
     }
 }
 
