@@ -28,8 +28,8 @@ struct DriveOverlay: View {
 
                 if !compact {
                     RetroRadio()
-                        .frame(width: min(560, max(360, size.width * 0.46)))
-                        .padding(.top, max(56, size.height * 0.07))
+                        .frame(width: min(520, max(340, size.width * 0.42)))
+                        .padding(.top, max(64, size.height * 0.09))
                 }
             }
             .frame(width: size.width, height: size.height)
@@ -214,10 +214,12 @@ struct RetroRadio: View {
                         .shadow(color: glow.opacity(0.5), radius: 3)
                         .offset(x: 8, y: g.size.height * 0.68)
                 }
+                .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             }
         }
         .frame(height: h * 0.6)
+        .clipped()
         .frame(maxWidth: .infinity)
         .layoutPriority(1)
     }
