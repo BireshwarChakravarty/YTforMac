@@ -5,6 +5,14 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Publish a GitHub Release with this version (e.g. 1.0.0). Leave empty to just build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -27,6 +35,8 @@ jobs:
         run: ./Scripts/check-shaders.sh
 
       - name: Build Encore.app (universal)
+        env:
+          VERSION: ${{ inputs.release_version }}
         run: UNIVERSAL=1 DMG=1 ./Scripts/build-app.sh
 
       - name: Upload app
@@ -71,3 +81,29 @@ jobs:
           name: Encore-screenshots
           path: dist/screens
           if-no-files-found: ignore
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.release_version != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.release_version }}
+          target_commitish: ${{ github.sha }}
+          name: Encore ${{ inputs.release_version }}
+          files: |
+            dist/Encore.dmg
+            dist/Encore.zip
+          body: |
+            **Encore** is a native YouTube player for macOS. Media keys always work, even with every window closed.
+            It has video and audio modes, ten live visualisers (five of them 3D, rendered with Metal), a menu bar player and a floating mini player.
+
+            ### Install
+            1. Download **Encore.dmg** below, open it and drag Encore to Applications.
+            2. The app is ad-hoc signed, not notarized. On first launch, right-click it and choose **Open**, or run:
+               ```
+               xattr -cr /Applications/Encore.app
+               ```
+            3. Sign in with the account button at the bottom of the sidebar to get your feed and subscriptions.
+
+            Universal build (Apple silicon and Intel). Requires macOS 14 or later; Liquid Glass styling appears on macOS 26 and later.
+
+            Encore is an independent app and is not affiliated with YouTube or Google.
