@@ -10,6 +10,11 @@ on:
         description: "Publish a GitHub Release with this version (e.g. 1.0.0). Leave empty to just build."
         required: false
         default: ""
+      replace_existing:
+        description: "If a release with this version already exists, delete it (and its tag) and publish again from this commit."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -82,6 +87,12 @@ jobs:
           path: dist/screens
           if-no-files-found: ignore
 
+      - name: Remove existing release with the same version
+        if: ${{ inputs.release_version != '' && inputs.replace_existing }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "v${{ inputs.release_version }}" --cleanup-tag --yes --repo "${{ github.repository }}" || true
+
       - name: Publish GitHub Release
         if: ${{ inputs.release_version != '' }}
         uses: softprops/action-gh-release@v2
@@ -103,6 +114,8 @@ jobs:
                xattr -cr /Applications/Encore.app
                ```
             3. Sign in with the account button at the bottom of the sidebar to get your feed and subscriptions.
+
+            The badge next to the visualiser picker shows **Live audio** when the visualiser is reacting to the actual sound, and **Simulated** when it is following a tempo-matched simulation (live streams, paused, or the analyser turned off).
 
             Universal build (Apple silicon and Intel). Requires macOS 14 or later; Liquid Glass styling appears on macOS 26 and later.
 

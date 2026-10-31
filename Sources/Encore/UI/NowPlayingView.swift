@@ -29,8 +29,9 @@ struct NowPlayingView: View {
                 }
 
                 VStack(spacing: 0) {
-                    HStack(alignment: .top) {
+                    HStack(alignment: .top, spacing: 8) {
                         VisualizerPicker()
+                        AudioSourceBadge()
                         Spacer()
                         UpNextChip()
                     }
@@ -340,5 +341,45 @@ struct PlayerProblemCard: View {
         .padding(28)
         .encoreGlass(cornerRadius: 22)
         .shadow(color: .black.opacity(0.4), radius: 30, y: 10)
+    }
+}
+
+/// Shows whether the visualiser is following the real audio ("Live audio")
+/// or the tempo-matched simulation ("Simulated"), and why.
+struct AudioSourceBadge: View {
+    var compact = false
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            let player = model.player
+            let live = model.visualizer.isLive && player.isPlaying
+            let reason: String? = {
+                if live { return nil }
+                if !player.isPlaying { return "paused" }
+                if !model.settings.visualizerUsesAudio { return "analyser off" }
+                if player.isLive { return "live stream" }
+                return nil
+            }()
+            if player.hasMedia {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(live ? Color.green : (player.isPlaying ? Color.orange : Theme.Palette.textTertiary))
+                        .frame(width: 7, height: 7)
+                        .shadow(color: live ? .green.opacity(0.8) : .clear, radius: 4)
+                    Text(live ? "Live audio" : (reason.map { "Simulated · \($0)" } ?? "Simulated"))
+                        .font(.system(size: compact ? 10 : 11.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                }
+                .padding(.horizontal, compact ? 8 : 11)
+                .padding(.vertical, compact ? 4 : 7)
+                .background(Capsule().fill(.black.opacity(0.25)).overlay(Capsule().strokeBorder(Theme.Palette.stroke)))
+                .help(live
+                      ? "The visualiser is reacting to the actual audio."
+                      : "The visualiser is following a tempo-matched simulation. This happens for live streams, while the analyser is starting, or when \u{201C}React to the actual audio\u{201D} is off in Settings.")
+                .animation(.easeInOut(duration: 0.25), value: live)
+            }
+        }
+        .fixedSize()
     }
 }

@@ -32,6 +32,7 @@ struct MenuBarView: View {
                     .frame(height: 56)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.black.opacity(0.18)))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(alignment: .topTrailing) { AudioSourceBadge(compact: true).padding(5) }
 
                 ScrubberView(compact: true)
                 TransportControls(size: .medium, showSkips: true)
