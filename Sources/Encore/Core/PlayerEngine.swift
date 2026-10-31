@@ -337,7 +337,8 @@ final class PlayerEngine: NSObject {
         if let currentURL {
             var c = URLComponents(url: currentURL, resolvingAgainstBaseURL: false)
             c?.fragment = nil
-            c?.queryItems = c?.queryItems?.filter { $0.name != "t" }
+            let kept = c?.queryItems?.filter { $0.name != "t" }
+            c?.queryItems = kept
             settings.lastURL = c?.url?.absoluteString
         }
         settings.lastPosition = position()
