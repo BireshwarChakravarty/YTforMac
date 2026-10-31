@@ -2,7 +2,7 @@
 
 <h1 align="center">Encore</h1>
 <p align="center"><b>A native YouTube player for macOS.</b><br>
-Media keys always work, even with every window closed. Video and audio modes at the highest quality YouTube offers, twelve visualisers that move with the music (two of them sing along with synced lyrics), a menu bar player and a floating mini player.</p>
+Media keys always work, even with every window closed. Video and audio modes at the highest quality YouTube offers, eleven visualisers that move with the music (two of them sing along with synced lyrics), a menu bar player and a floating mini player.</p>
 
 ---
 
@@ -11,7 +11,6 @@ Media keys always work, even with every window closed. Video and audio modes at 
   <img src="docs/screenshots/lyrics-pop.jpg" width="49%" alt="Lyric Pop">
   <img src="docs/screenshots/audio-drive.jpg" width="49%" alt="Night Drive visualiser">
   <img src="docs/screenshots/audio-waves.jpg" width="49%" alt="Waves visualiser">
-  <img src="docs/screenshots/audio-orb.jpg" width="49%" alt="Orb visualiser">
   <img src="docs/screenshots/audio-cosmos.jpg" width="49%" alt="Cosmos visualiser">
   <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Aurora visualiser">
   <img src="docs/screenshots/audio-silk.jpg" width="49%" alt="Silk visualiser">
@@ -37,8 +36,8 @@ Encore fixes that:
 |---|---|
 | **Video mode** | The video fills the window (cinema layout). Toggle back to the full YouTube page for comments and descriptions. |
 | **Audio mode** | Hides the video and keeps streaming at the highest quality YouTube offers, which brings its best audio too. A 144p data saver is available if you want it. The screen shows a full-bleed visualiser over a blurred backdrop taken from the video's artwork. |
-| **12 visualisers** | **GPU (Metal):** Flow, Cosmos (a spiral galaxy), Aurora (northern lights over a lake), Silk (flowing satin in the artwork's colours), Night Drive (first person, rain on the windshield, wipers, a city streaming past and the song on the dashboard screen), Waves (a soft glow around the edges with breathing waveforms), Halo, Orb (a glass orb with a nebula inside), Tide. **Canvas:** Spectrum. The GPU scenes share a film-style pipeline: HDR bloom, ACES tonemapping, a vignette and subtle grain. Beat detection and band levels relative to the song's own average drive the motion. Colours come from the artwork, and a badge shows **Live audio** or **Simulated**. |
-| **Synced lyrics** | **Lyric Pop** bursts each word onto the screen as it's sung; **Sing-Along** is a scrolling karaoke view beside the artwork (click a line to jump to it). Lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database, matched by artist, title and length; hand-made YouTube captions are the fallback. A chip shows the source and nudges the timing by ±0.25 s. Lookups happen only while a lyrics style is on. |
+| **11 visualisers** | **GPU (Metal):** Flow, Cosmos (a spiral galaxy), Aurora (northern lights over a lake), Silk (flowing satin in the artwork's colours), Night Drive (from the driver's seat of a 2025 Creta-style cabin: dual curved screens with the song and speed, amber ambient light, rain and wipers, a city streaming past), Waves (a soft glow around the edges with breathing waveforms), Halo, Tide. **Canvas:** Spectrum. The GPU scenes share a film-style pipeline: HDR bloom, ACES tonemapping, a vignette and subtle grain. Beat detection and band levels relative to the song's own average drive the motion. Colours come from the artwork, and a badge shows **Live audio** or **Simulated**. |
+| **Synced lyrics** | **Lyric Pop** bursts each word onto the screen as it's sung, over a calm dusk sky; **Sing-Along** is a scrolling karaoke view beside the artwork (click a line to jump to it). Lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database, matched by artist, title and length; hand-made YouTube captions are the fallback. A chip shows the source and nudges the timing by ±0.25 s. Lookups happen only while a lyrics style is on. |
 | **Menu bar player** | Artwork, a live mini spectrum, scrubber, controls, the Video/Audio switch and volume. Optionally shows the track title in the menu bar. |
 | **Mini player** | A floating, always-on-top panel (⇧⌘P). It shows the video in video mode and the visualiser in audio mode. |
 | **Your YouTube** | Sign in once to get your home feed, subscriptions, history, Watch Later, liked videos and playlists. Native search with suggestions. You can paste any YouTube link. |

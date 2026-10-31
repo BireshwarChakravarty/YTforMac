@@ -21,7 +21,7 @@ struct VisualizerView: View {
                     if style == .drive { DriveOverlay(compact: compact) }
                     if style == .lyricPop {
                         // Keep the words readable over the light show.
-                        RadialGradient(colors: [.black.opacity(0.55), .black.opacity(0.2)], center: .center, startRadius: 0, endRadius: 700)
+                        RadialGradient(colors: [.black.opacity(0.25), .clear], center: .center, startRadius: 0, endRadius: 600)
                             .allowsHitTesting(false)
                     }
                     if style.isLyrics && compact { LyricPopView(compact: true).padding(10) }

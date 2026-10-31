@@ -3,7 +3,9 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case flow, cosmos, aurora, silk, halo, waves, drive, orb, tide
+    case flow, cosmos, aurora, silk, halo, waves, drive, tide
+    /// The quiet dusk behind Lyric Pop.
+    case calm
     /// A dimmer, slower Silk: the backdrop for lyrics.
     case stage
 
@@ -28,8 +30,7 @@ enum MetalScene: String {
     var maxPixelWidth: CGFloat {
         switch self {
         case .aurora: return 1200
-        case .orb: return 1600
-        case .silk, .stage: return 1100
+        case .silk, .stage, .calm: return 1100
         case .drive: return 1500
         default: return 2000
         }
@@ -56,8 +57,8 @@ enum MetalScene: String {
             return Config(fragment: "wavesFragment", threshold: 0.85, bloom: 0.6, exposure: 1.0)
         case .drive:
             return Config(fragment: "driveFragment", threshold: 0.7, bloom: 0.9, exposure: 1.0)
-        case .orb:
-            return Config(fragment: "orbFragment", threshold: 0.8, bloom: 0.8, exposure: 1.0)
+        case .calm:
+            return Config(fragment: "calmFragment", threshold: 0.9, bloom: 0.5, exposure: 1.0)
         case .tide:
             return Config(background: "tideBackground", pointVertex: "tideVertex", pointCount: 220 * 110,
                           decay: 0.6, maxMode: 1, threshold: 0.6, bloom: 0.9, exposure: 1.1)

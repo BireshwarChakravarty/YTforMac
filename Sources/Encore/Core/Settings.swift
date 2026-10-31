@@ -10,7 +10,7 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, orb, tide
+    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, tide
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -24,7 +24,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .waves: return "Waves"
         case .halo: return "Halo"
         case .spectrum: return "Spectrum"
-        case .orb: return "Orb"
         case .tide: return "Tide"
         }
     }
@@ -40,7 +39,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .waves: return "waveform.path"
         case .halo: return "circle.dashed"
         case .spectrum: return "waveform"
-        case .orb: return "circle.circle.fill"
         case .tide: return "water.waves"
         }
     }
@@ -57,7 +55,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .waves: return "A soft glow that listens, waves at its heart"
         case .halo: return "Artwork ringed by the spectrum"
         case .spectrum: return "A smooth, mirrored waveform"
-        case .orb: return "A glass orb with a nebula inside"
         case .tide: return "A calm sea of light"
         }
     }
@@ -65,7 +62,7 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     var metalScene: MetalScene? {
         switch self {
         case .flow: return .flow
-        case .lyricPop: return .flow
+        case .lyricPop: return .calm
         case .singAlong: return .stage
         case .cosmos: return .cosmos
         case .aurora: return .aurora
@@ -73,7 +70,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .drive: return .drive
         case .waves: return .waves
         case .halo: return .halo
-        case .orb: return .orb
         case .tide: return .tide
         case .spectrum: return nil
         }
