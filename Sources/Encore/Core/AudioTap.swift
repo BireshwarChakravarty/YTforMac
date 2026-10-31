@@ -60,6 +60,8 @@ final class AudioTap: @unchecked Sendable {
     private var smoothedDB: [Float] = []
     private var gain: Float = 1
     private var lastFrameTime: CFAbsoluteTime = 0
+    /// Debug only (CI self-test): also tap Encore's own process.
+    var debugIncludeSelf = false
 
     // MARK: Control
 
@@ -92,7 +94,7 @@ final class AudioTap: @unchecked Sendable {
 
     private func ensureTap() {
         guard #available(macOS 14.2, *) else { status = .unsupported; return }
-        let pids = Self.encoreAudioProcesses()
+        let pids = Self.encoreAudioProcesses(includeSelf: debugIncludeSelf)
         if pids.isEmpty {
             if procID == nil { status = .waitingForAudio }
             return
@@ -310,7 +312,7 @@ final class AudioTap: @unchecked Sendable {
 
     /// WebKit helper processes that Encore is responsible for and that are
     /// known to Core Audio.
-    static func encoreAudioProcesses() -> [AudioProcess] {
+    static func encoreAudioProcesses(includeSelf: Bool = false) -> [AudioProcess] {
         let me = getpid()
         let all = audioProcesses()
         let responsible = responsibilityLookup()
@@ -318,7 +320,8 @@ final class AudioTap: @unchecked Sendable {
         // terminal, the terminal is. Match WebKit helpers against either.
         let myResponsible = responsible?(me) ?? me
         let mine = all.filter { p in
-            guard p.pid != me, let responsible else { return false }
+            if p.pid == me { return includeSelf }
+            guard let responsible else { return false }
             let owner = responsible(p.pid)
             return owner == me || (owner == myResponsible && p.bundleID.hasPrefix("com.apple.WebKit"))
         }

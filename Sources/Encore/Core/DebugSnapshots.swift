@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ImageIO
 import ScreenCaptureKit
 import SwiftUI
@@ -76,7 +77,30 @@ enum DebugSnapshots {
                     let peak = model.visualizer.bands.max() ?? 0
                     print("TAP t=\(second)s status=\(model.visualizer.audioStatus) live=\(model.visualizer.isLive) peakBand=\(String(format: "%.2f", peak))")
                 }
+                let ctxState = try? await model.player.webView.evaluateJavaScript("window.__toneCtx ? window.__toneCtx.state : 'none'")
+                print("TAP webkit tone AudioContext: \(ctxState as? String ?? "n/a")")
                 print("TAP processes: \(AudioTap.describeProcesses())")
+
+                // Self-test of the capture + FFT path: play a native tone in
+                // Encore's own process and tap that.
+                model.audioTap.setActive(false, playing: false)
+                let tone = NativeTestTone()
+                tone.start()
+                model.audioTap.debugIncludeSelf = true
+                model.visualizer.forceDemo = true   // let ingested frames drive the bands
+                try? await Task.sleep(for: .seconds(1))
+                model.audioTap.setActive(true, playing: true)
+                for second in 1...6 {
+                    try? await Task.sleep(for: .seconds(1))
+                    model.visualizer.tick()
+                    let bands = model.visualizer.bands
+                    let peak = bands.max() ?? 0
+                    let peakIndex = bands.firstIndex(of: peak) ?? -1
+                    print("SELFTAP t=\(second)s status=\(model.visualizer.audioStatus) live=\(model.visualizer.isLive) peakBand=\(String(format: "%.2f", peak)) at band \(peakIndex)")
+                }
+                print("SELFTAP processes: \(AudioTap.describeProcesses())")
+                tone.stop()
+                model.audioTap.setActive(false, playing: false)
                 print("TAP output device: \(AudioTap.defaultOutputUID() ?? "none")")
                 fflush(stdout)
             }
@@ -174,7 +198,7 @@ enum DebugSnapshots {
 /// A short looping synth pattern played with Web Audio inside WebKit.
 private let testToneHTML = """
 <html><body style="background:#000"><script>
-const ctx = new AudioContext();
+const ctx = new AudioContext(); window.__toneCtx = ctx;
 const out = ctx.createGain(); out.gain.value = 0.4; out.connect(ctx.destination);
 function note(f, t, d, type) {
   const o = ctx.createOscillator(), g = ctx.createGain();
@@ -190,3 +214,31 @@ for (let i = 0; i < 64; i++) {
 ctx.resume();
 </script></body></html>
 """
+
+
+/// A 220 Hz + 1.76 kHz tone generated in Encore's own process (CI self-test).
+private final class NativeTestTone {
+    private let engine = AVAudioEngine()
+    private var phase1 = 0.0, phase2 = 0.0
+
+    func start() {
+        let format = engine.outputNode.inputFormat(forBus: 0)
+        let rate = format.sampleRate > 0 ? format.sampleRate : 48_000
+        let source = AVAudioSourceNode { [unowned self] _, _, frameCount, bufferList -> OSStatus in
+            let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
+            for frame in 0..<Int(frameCount) {
+                let s = Float(0.25 * sin(self.phase1) + 0.1 * sin(self.phase2))
+                self.phase1 += 2 * .pi * 220 / rate
+                self.phase2 += 2 * .pi * 1760 / rate
+                for buffer in buffers { buffer.mData?.assumingMemoryBound(to: Float.self)[frame] = s }
+            }
+            return noErr
+        }
+        let mono = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
+        engine.attach(source)
+        engine.connect(source, to: engine.mainMixerNode, format: mono)
+        do { try engine.start(); print("SELFTAP native tone started at \(Int(rate)) Hz") } catch { print("SELFTAP native tone failed: \(error)") }
+    }
+
+    func stop() { engine.stop() }
+}
