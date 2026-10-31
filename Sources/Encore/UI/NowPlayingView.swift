@@ -32,11 +32,17 @@ struct NowPlayingView: View {
                     HStack(alignment: .top, spacing: 8) {
                         VisualizerPicker()
                         AudioSourceBadge()
+                        if model.settings.visualizerStyle.isLyrics { LyricsInfoChip() }
                         Spacer()
                         UpNextChip()
                     }
                     .padding(18)
-                    Spacer()
+                    if model.settings.visualizerStyle.isLyrics {
+                        LyricsStage(style: model.settings.visualizerStyle)
+                            .id(model.settings.visualizerStyle)
+                    } else {
+                        Spacer()
+                    }
                     bottomPanel
                 }
             } else {
@@ -51,7 +57,7 @@ struct NowPlayingView: View {
         return VStack(spacing: 18) {
             HStack(alignment: .bottom, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                  if model.settings.visualizerStyle != .drive {
+                  if model.settings.visualizerStyle != .drive && model.settings.visualizerStyle != .singAlong {
                     StatusPill().fixedSize()
                     Text(player.title.isEmpty ? "Loading…" : player.title)
                         .font(Theme.Fonts.display(28))
@@ -85,7 +91,7 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 36)
         .padding(.bottom, 26)
-        .padding(.top, 70)
+        .padding(.top, model.settings.visualizerStyle.isLyrics ? 16 : 70)
         .background(
             LinearGradient(colors: [.clear, Theme.Palette.background.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                 .allowsHitTesting(false)
@@ -209,7 +215,7 @@ private struct VisualizerGrid: View {
                                 HStack(spacing: 5) {
                                     Text(style.title).font(Theme.Fonts.title(13))
                                     if style.isGPU {
-                                        Text("3D").font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                                        Text(style.isLyrics ? "LYRICS" : "3D").font(.system(size: 8.5, weight: .heavy, design: .rounded))
                                             .padding(.horizontal, 4).padding(.vertical, 1)
                                             .background(Capsule().fill(.white.opacity(0.12)))
                                     }

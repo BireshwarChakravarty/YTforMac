@@ -3,7 +3,9 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case flow, cosmos, aurora, ambient, halo, waves, drive, orb, tide
+    case flow, cosmos, aurora, silk, halo, waves, drive, orb, tide
+    /// A dimmer, slower Silk: the backdrop for lyrics.
+    case stage
 
     struct Config {
         var fragment: String?            // full-screen scene shader
@@ -26,7 +28,9 @@ enum MetalScene: String {
     var maxPixelWidth: CGFloat {
         switch self {
         case .aurora: return 1200
-        case .ambient, .orb: return 1600
+        case .orb: return 1600
+        case .silk, .stage: return 1100
+        case .drive: return 1500
         default: return 2000
         }
     }
@@ -41,17 +45,19 @@ enum MetalScene: String {
                           decay: 0.55, maxMode: 1, threshold: 0.7, bloom: 0.9, exposure: 1.05)
         case .aurora:
             return Config(fragment: "auroraFragment", threshold: 0.75, bloom: 0.7, exposure: 1.0)
-        case .ambient:
-            return Config(fragment: "ambientFragment", threshold: 1.1, bloom: 0.4, exposure: 1.0)
+        case .silk:
+            return Config(fragment: "silkFragment", threshold: 0.9, bloom: 0.5, exposure: 1.05)
+        case .stage:
+            return Config(fragment: "silkFragment", threshold: 1.2, bloom: 0.3, exposure: 0.5)
         case .halo:
             return Config(fragment: "haloFragment", decay: 0.9, zoom: 1.008, maxMode: 1,
                           threshold: 0.55, bloom: 0.9, exposure: 1.05)
         case .waves:
-            return Config(fragment: "wavesFragment", decay: 0.72, threshold: 0.6, bloom: 1.0, exposure: 1.0)
+            return Config(fragment: "wavesFragment", threshold: 0.85, bloom: 0.6, exposure: 1.0)
         case .drive:
             return Config(fragment: "driveFragment", threshold: 0.7, bloom: 0.9, exposure: 1.0)
         case .orb:
-            return Config(fragment: "orbFragment", threshold: 0.85, bloom: 0.6, exposure: 0.9)
+            return Config(fragment: "orbFragment", threshold: 0.8, bloom: 0.8, exposure: 1.0)
         case .tide:
             return Config(background: "tideBackground", pointVertex: "tideVertex", pointCount: 220 * 110,
                           decay: 0.6, maxMode: 1, threshold: 0.6, bloom: 0.9, exposure: 1.1)

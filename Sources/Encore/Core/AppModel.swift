@@ -12,6 +12,7 @@ final class AppModel {
     let player: PlayerEngine
     let browser: BrowserEngine
     let visualizer = VisualizerEngine()
+    let lyrics = LyricsService()
     @ObservationIgnored let audioTap = AudioTap()
     @ObservationIgnored private var visualizerOnScreen = false
     @ObservationIgnored private(set) var nowPlaying: NowPlayingCenter!
@@ -30,6 +31,7 @@ final class AppModel {
         player = PlayerEngine(settings: AppSettings.shared)
         browser = BrowserEngine(settings: AppSettings.shared)
         nowPlaying = NowPlayingCenter(player: player)
+        lyrics.player = player
 
         player.onBrowseRequest = { [weak self] url in
             self?.browse(url)
@@ -39,6 +41,7 @@ final class AppModel {
             self.nowPlaying.update()
             self.visualizer.isPlaying = self.player.isPlaying
             self.audioTap.setPlaying(self.player.isPlaying)
+            if self.settings.visualizerStyle.isLyrics { self.refreshLyrics() }
         }
         player.onVisualizerDemand = { [weak self] onScreen in
             self?.visualizerOnScreen = onScreen
@@ -175,6 +178,13 @@ final class AppModel {
         let active = visualizerOnScreen && settings.visualizerUsesAudio
         audioTap.setActive(active, playing: player.isPlaying)
         if !active { visualizer.audioStatus = settings.visualizerUsesAudio ? .idle : .idle }
+    }
+
+    /// Looks up lyrics for the current track. Only called while a lyrics style
+    /// is chosen, so nothing is sent to the lyrics service otherwise.
+    func refreshLyrics() {
+        lyrics.update(videoId: player.videoId, title: player.title, author: player.author,
+                      duration: player.duration, isAd: player.isAd)
     }
 
     func cycleVisualizer() {

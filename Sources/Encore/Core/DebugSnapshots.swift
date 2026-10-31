@@ -30,12 +30,38 @@ enum DebugSnapshots {
             log(model, "initial")
             await captureMain(dir, "1-audio-\(model.settings.visualizerStyle.rawValue)")
 
-            for style in [VisualizerStyle.cosmos, .aurora, .ambient, .drive, .waves, .halo, .spectrum] {
+            for style in [VisualizerStyle.cosmos, .aurora, .silk, .drive, .waves, .orb, .halo, .spectrum] {
                 model.settings.visualizerStyle = style
                 try? await Task.sleep(for: .seconds(3.5))
                 await captureMain(dir, "2-audio-\(style.rawValue)")
+                if style == .drive {
+                    // The wipers sweep 7 s into each cycle.
+                    try? await Task.sleep(for: .seconds(4.0))
+                    await captureMain(dir, "2-audio-drive-wipers")
+                }
             }
             log(model, "after visualisers")
+
+            // Lyrics: YouTube can't play on CI, so run the sample lyrics on their own clock.
+            if args.contains("--demo-lyrics") {
+                await lyricsSelfTest()
+                model.lyrics.startDemo()
+                model.settings.visualizerStyle = .lyricPop
+                try? await Task.sleep(for: .seconds(8.0))
+                await captureMain(dir, "2-audio-lyricpop")
+                try? await Task.sleep(for: .seconds(1.6))
+                await captureMain(dir, "2-audio-lyricpop-b")
+                model.settings.visualizerStyle = .singAlong
+                try? await Task.sleep(for: .seconds(4.5))
+                await captureMain(dir, "2-audio-singalong")
+                MiniPlayerController.shared.show()
+                try? await Task.sleep(for: .seconds(3))
+                if let panel = NSApp.windows.first(where: { $0 is NSPanel && $0.isVisible && $0.frameAutosaveName == "EncoreMiniPlayer" }) {
+                    await capture(panel, dir, "5-mini-player-lyrics")
+                }
+                MiniPlayerController.shared.close()
+                model.settings.visualizerStyle = .flow
+            }
 
             model.setMode(.video)
             try? await Task.sleep(for: .seconds(6))
@@ -109,6 +135,31 @@ enum DebugSnapshots {
             print("SNAPSHOTS-DONE")
             fflush(stdout)
         }
+    }
+
+    /// Checks title cleanup and a real LRCLIB lookup (prints counts only).
+    private static func lyricsSelfTest() async {
+        let samples: [(String, String, Double)] = [
+            ("Daft Punk - Get Lucky (Official Audio) ft. Pharrell Williams, Nile Rodgers", "Daft Punk", 369),
+            ("Coldplay - Viva La Vida (Official Video)", "Coldplay", 244),
+            ("The Weeknd - Blinding Lights (Official Audio)", "TheWeekndVEVO", 201),
+            ("Bohemian Rhapsody", "Queen Official", 355),
+        ]
+        for (title, channel, duration) in samples {
+            let q = LyricsQuery(title: title, channel: channel, duration: duration)
+            let result = await LyricsService.lookup(q)
+            let summary: String
+            switch result {
+            case .synced(let lines, let source): summary = "synced \(lines.count) lines (\(source.rawValue)), first at \(String(format: "%.1f", lines.first?.start ?? 0))s"
+            case .plain(let lines): summary = "plain \(lines.count) lines"
+            case .instrumental: summary = "instrumental"
+            default: summary = "not found"
+            }
+            print("LYRICSTEST artist=\"\(q.artist)\" track=\"\(q.track)\" -> \(summary)")
+        }
+        let parsed = LRC.parse(LyricsService.demoLRC)
+        print("LYRICSTEST demo parsed \(parsed.count) lines; words in line 1: \(parsed.first(where: { !$0.text.isEmpty })?.words.count ?? 0)")
+        fflush(stdout)
     }
 
     /// CI displays are small; a window larger than the screen cannot be captured.

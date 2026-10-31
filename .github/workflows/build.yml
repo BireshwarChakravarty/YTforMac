@@ -66,13 +66,13 @@ jobs:
           done
           system_profiler SPAudioDataType 2>/dev/null | head -20
           open --stdout "$SHOTS/run.log" --stderr "$SHOTS/run.log" -a "$PWD/dist/Encore.app" --args \
-              --play "$VIDEO" --mode audio --visualizer flow --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals --test-tone
+              --play "$VIDEO" --mode audio --visualizer flow --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals --demo-lyrics --test-tone
           for i in $(seq 1 200); do
             grep -q SNAPSHOTS-DONE "$SHOTS/run.log" 2>/dev/null && break
             pgrep -x Encore >/dev/null || { echo "❌ Encore exited early"; break; }
             sleep 2
           done
-          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|TAP|rror" "$SHOTS/run.log" | head -100
+          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|TAP|LYRICS|rror" "$SHOTS/run.log" | head -100
           pgrep -x Encore >/dev/null && echo "✅ Encore still running"
           pkill -x Encore; sleep 1; pkill -9 -x Encore
           for f in "$SHOTS"/*.png; do

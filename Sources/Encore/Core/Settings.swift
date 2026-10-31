@@ -10,14 +10,16 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case flow, cosmos, aurora, ambient, drive, waves, halo, spectrum, orb, tide
+    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, orb, tide
     var id: String { rawValue }
     var title: String {
         switch self {
         case .flow: return "Flow"
+        case .lyricPop: return "Lyric Pop"
+        case .singAlong: return "Sing-Along"
         case .cosmos: return "Cosmos"
         case .aurora: return "Aurora"
-        case .ambient: return "Ambient"
+        case .silk: return "Silk"
         case .drive: return "Night Drive"
         case .waves: return "Waves"
         case .halo: return "Halo"
@@ -29,9 +31,11 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     var symbol: String {
         switch self {
         case .flow: return "tornado"
+        case .lyricPop: return "quote.bubble.fill"
+        case .singAlong: return "music.mic"
         case .cosmos: return "sparkles"
         case .aurora: return "moon.stars.fill"
-        case .ambient: return "paintpalette.fill"
+        case .silk: return "wind"
         case .drive: return "car.rear.fill"
         case .waves: return "waveform.path"
         case .halo: return "circle.dashed"
@@ -44,14 +48,16 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     var caption: String {
         switch self {
         case .flow: return "Rivers of light from the spectrum"
+        case .lyricPop: return "Synced lyrics that burst in, word by word"
+        case .singAlong: return "Scrolling karaoke lyrics, line by line"
         case .cosmos: return "A spiral galaxy in deep space"
         case .aurora: return "Northern lights over a lake"
-        case .ambient: return "Your artwork, glowing and alive"
+        case .silk: return "Flowing satin in your artwork's colours"
         case .drive: return "A night drive with the radio on"
-        case .waves: return "Silk ribbons of light"
+        case .waves: return "A soft glow that listens, waves at its heart"
         case .halo: return "Artwork ringed by the spectrum"
         case .spectrum: return "A smooth, mirrored waveform"
-        case .orb: return "A glass sphere that breathes"
+        case .orb: return "A glass orb with a nebula inside"
         case .tide: return "A calm sea of light"
         }
     }
@@ -59,9 +65,11 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     var metalScene: MetalScene? {
         switch self {
         case .flow: return .flow
+        case .lyricPop: return .flow
+        case .singAlong: return .stage
         case .cosmos: return .cosmos
         case .aurora: return .aurora
-        case .ambient: return .ambient
+        case .silk: return .silk
         case .drive: return .drive
         case .waves: return .waves
         case .halo: return .halo
@@ -71,6 +79,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         }
     }
     var isGPU: Bool { metalScene != nil }
+    /// Styles that show synced lyrics over a GPU backdrop.
+    var isLyrics: Bool { self == .lyricPop || self == .singAlong }
     var next: VisualizerStyle {
         let all = Self.allCases
         return all[(all.firstIndex(of: self)! + 1) % all.count]

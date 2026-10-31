@@ -19,6 +19,12 @@ struct VisualizerView: View {
                                    artwork: model.player.artwork,
                                    maxPixelWidth: compact ? 900 : scene.maxPixelWidth)
                     if style == .drive { DriveOverlay(compact: compact) }
+                    if style == .lyricPop {
+                        // Keep the words readable over the light show.
+                        RadialGradient(colors: [.black.opacity(0.55), .black.opacity(0.2)], center: .center, startRadius: 0, endRadius: 700)
+                            .allowsHitTesting(false)
+                    }
+                    if style.isLyrics && compact { LyricPopView(compact: true).padding(10) }
                 }
             } else {
                 TimelineView(.animation) { timeline in
