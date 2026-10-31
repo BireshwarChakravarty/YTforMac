@@ -7,16 +7,19 @@ Media keys always work, even with every window closed. Video and audio modes at 
 ---
 
 <p align="center">
-  <img src="docs/screenshots/audio-flow.jpg" width="49%" alt="Flow visualiser">
-  <img src="docs/screenshots/audio-swarm.jpg" width="49%" alt="Swarm visualiser">
-  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Halo visualiser">
-  <img src="docs/screenshots/audio-ambient.jpg" width="49%" alt="Ambient visualiser">
-  <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Aurora visualiser">
+  <img src="docs/screenshots/lyrics-singalong.jpg" width="49%" alt="Sing-Along lyrics">
+  <img src="docs/screenshots/lyrics-pop.jpg" width="49%" alt="Lyric Pop">
+  <img src="docs/screenshots/audio-drive.jpg" width="49%" alt="Night Drive visualiser">
+  <img src="docs/screenshots/audio-waves.jpg" width="49%" alt="Waves visualiser">
   <img src="docs/screenshots/audio-orb.jpg" width="49%" alt="Orb visualiser">
+  <img src="docs/screenshots/audio-cosmos.jpg" width="49%" alt="Cosmos visualiser">
+  <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Aurora visualiser">
+  <img src="docs/screenshots/audio-silk.jpg" width="49%" alt="Silk visualiser">
+  <img src="docs/screenshots/audio-flow.jpg" width="49%" alt="Flow visualiser">
   <img src="docs/screenshots/video-mode.jpg" width="49%" alt="Video mode with the details drop-down">
 </p>
 <p align="center"><img src="docs/screenshots/menu-bar.jpg" width="300" alt="Menu bar player"></p>
-<p align="center"><sub>Real captures of Encore on macOS 26. They were taken by the CI smoke test on a small virtual display, with the visualisers in demo mode, because YouTube won't stream to datacenter machines. Colours come from the video's artwork.</sub></p>
+<p align="center"><sub>Real captures of Encore on macOS 26. They were taken by the CI smoke test on a small virtual display, with the visualisers and sample lyrics in demo mode, because YouTube won't stream to datacenter machines. Colours come from the video's artwork.</sub></p>
 
 ## Why Encore exists
 
