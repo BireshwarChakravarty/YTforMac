@@ -569,94 +569,178 @@ fragment float4 wavesFragment(QuadOut in [[stage_in]],
 }
 
 // ================================================================ Night Drive
-// A drive toward a retro sunset: neon road, passing streetlights, synthwave
-// grid. The car and the radio are drawn natively on top.
+// First person, from the driver's seat (right-hand drive): a dusky city seen
+// through a rainy windshield, traffic and street lights as out-of-focus bokeh,
+// the interior in silhouette, and a dashboard screen with old-radio LED bars
+// (the song title is drawn natively on top of the screen).
 
-constant float DRIVE_HORIZON = 0.02;
-constant float DRIVE_CAMH = 1.15;
-constant float DRIVE_FOCAL = 0.9;
-static float roadCurve(float z, float travel) { return 2.2 * sin((z + travel) * 0.018) + 1.1 * sin((z + travel) * 0.041 + 1.3); }
-static float curveRel(float z, float travel) {
-    return roadCurve(z, travel) - roadCurve(0.0, travel) - (roadCurve(0.5, travel) - roadCurve(0.0, travel)) * z * 2.0;
+static float sdBox(float2 p, float2 b, float r) { float2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+
+static float3 driveOutside(float2 uv, float t, constant Uniforms &u, texture2d<float> specTex) {
+    float3 sky = mix(float3(0.62, 0.70, 0.76), float3(0.30, 0.40, 0.50), smoothstep(0.0, 0.42, uv.y));
+    sky = mix(sky, u.p2.rgb * 0.6 + sky * 0.6, 0.15);
+    float blocks = 0.0;
+    for (int i = 0; i < 9; i++) {
+        float fi = float(i);
+        float x = (hash1(fi * 3.7) - 0.5) * 1.9;
+        float w = 0.05 + 0.12 * hash1(fi * 1.3), h = 0.04 + 0.14 * hash1(fi * 5.1);
+        float d = sdBox(uv - float2(x, 0.02 + h * 0.5), float2(w, h * 0.5), 0.0);
+        blocks += (1.0 - smoothstep(-0.01, 0.035, d)) * (0.4 + 0.3 * hash1(fi * 9.0));
+    }
+    float3 col = mix(sky, float3(0.30, 0.48, 0.52), clamp(blocks, 0.0, 1.0) * 0.55);
+    col = mix(col, float3(0.20, 0.22, 0.27), 1.0 - smoothstep(-0.06, 0.03, uv.y));
+    for (int i = 0; i < 46; i++) {
+        float fi = float(i);
+        float h1 = hash1(fi * 1.71), h2 = hash1(fi * 4.37), h3 = hash1(fi * 8.13);
+        float2 c;
+        float3 lc;
+        float r;
+        if (i < 22) {
+            float lane = floor(h1 * 5.0) - 2.0;
+            float depth = 0.3 + 0.7 * h2;
+            c = float2(lane * 0.22 * depth + (h3 - 0.5) * 0.1 + sin(t * 0.07 + fi) * 0.01, -0.035 + 0.05 * (1.0 - depth));
+            c.x += (fmod(fi, 2.0) - 0.5) * 0.05 * depth;
+            lc = float3(1.0, 0.12, 0.1) * (0.6 + 1.2 * spec(specTex, 0.05 + 0.3 * h2) + 1.2 * u.beat * step(0.5, h3));
+            r = 0.012 + 0.03 * depth;
+        } else if (i < 36) {
+            c = float2((h1 - 0.5) * 2.0, 0.10 + 0.22 * h2);
+            lc = float3(1.0, 0.62, 0.28) * (0.5 + 0.4 * spec(specTex, 0.4 + 0.4 * h3));
+            r = 0.01 + 0.022 * h3;
+        } else {
+            c = float2((h1 - 0.5) * 2.0, 0.02 + 0.12 * h2);
+            lc = mix(float3(0.9, 0.95, 1.0), float3(0.3, 0.9, 1.0), step(0.6, h3)) * (0.5 + 0.7 * spec(specTex, 0.7 + 0.25 * h2));
+            r = 0.01 + 0.02 * h3;
+        }
+        float d = length(uv - c);
+        float disc = 1.0 - smoothstep(r * 0.85, r, d);
+        float rim = smoothstep(r * 0.6, r * 0.95, d) * disc;
+        col += lc * (disc * 0.5 + rim * 0.22 + exp(-d / (r * 1.8)) * 0.07);
+    }
+    return col;
+}
+
+static float3 driveRain(float2 uv, float t) {
+    float2 off = float2(0.0);
+    float mask = 0.0;
+    for (int l = 0; l < 2; l++) {
+        float fl = float(l);
+        float scale = 26.0 + fl * 22.0;
+        float2 g = uv * float2(scale, scale * 0.8);
+        float2 id = floor(g), f = fract(g) - 0.5;
+        float h = hash2(id + fl * 11.0);
+        if (h > 0.45) {
+            float2 o = (float2(hash2(id + 1.7), hash2(id + 4.3)) - 0.5) * 0.6;
+            float r = 0.16 + 0.22 * fract(h * 17.0);
+            float2 dp = (f - o) * float2(1.0, 1.15);
+            float m = 1.0 - smoothstep(r * 0.8, r, length(dp));
+            off += dp / r * 0.012 * m;
+            mask = max(mask, m);
+        }
+    }
+    float2 g = uv * float2(14.0, 1.0);
+    float h = hash1(floor(g.x) * 3.1);
+    float y = fract(-t * (0.08 + 0.12 * h) + h * 7.0) * 1.4 - 0.7;
+    float x = (fract(g.x) - 0.5) / 14.0;
+    float2 dp = float2(x + 0.004 * sin(uv.y * 40.0 + h * 10.0), (uv.y - y) * 0.9);
+    float m = (1.0 - smoothstep(0.006, 0.009, length(dp * float2(1.0, 0.8)))) * step(0.55, h);
+    off += dp / 0.009 * 0.012 * m;
+    mask = max(mask, m);
+    float trail = (1.0 - smoothstep(0.0015, 0.003, abs(x))) * smoothstep(y, y + 0.25, uv.y) * step(uv.y, y + 0.25) * step(0.55, h);
+    return float3(off, max(mask, trail * 0.5));
 }
 
 fragment float4 driveFragment(QuadOut in [[stage_in]],
                               constant Uniforms &u [[buffer(0)]],
                               texture2d<float> specTex [[texture(0)]]) {
     float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
-    float travel = u.phase * 9.0 + u.time * 6.0;
-    float3 col;
-    float y = uv.y - DRIVE_HORIZON;
-    float3 horizonGlow = float3(1.0, 0.36, 0.42);
-    if (y > 0.0) {
-        float3 top = float3(0.03, 0.015, 0.09), mid = float3(0.32, 0.06, 0.38);
-        col = mix(horizonGlow * 0.9, mid, smoothstep(0.0, 0.16, y));
-        col = mix(col, top, smoothstep(0.12, 0.5, y));
-        float2 sid = floor(uv * 180.0);
-        float sh = hash2(sid);
-        col += float3(1.0) * step(0.993, sh) * smoothstep(0.15, 0.45, y) * (0.5 + 0.5 * sin(u.time * 2.0 + sh * 60.0));
-        float2 sc = float2(0.0, DRIVE_HORIZON + 0.16);
-        float sr = 0.21 + 0.006 * u.beat;
-        float d = length(uv - sc);
-        float sunMask = 1.0 - smoothstep(sr - 0.002, sr + 0.002, d);
-        float yy = (uv.y - sc.y) / sr;
-        float stripe = 1.0;
-        if (yy < 0.1) {
-            float band = fract((0.1 - yy) * 7.0 * 1.6 - u.time * 0.25);
-            stripe = band > min(0.8, (0.1 - yy) * 1.3) ? 1.0 : 0.0;
+    float aspect = u.res.x / u.res.y;
+    float t = u.time;
+    float px = 1.0 / u.res.y;
+    #define AA(d) clamp(0.5 - (d) / px, 0.0, 1.0)
+    // windshield view, refracted by raindrops
+    float3 r = driveRain(uv, t);
+    float3 view = driveOutside(uv + r.xy * 3.0, t, u, specTex);
+    float3 sharp = driveOutside(uv - r.xy * 6.0, t, u, specTex);
+    view = mix(view, sharp * 1.1 + 0.03, r.z * 0.8);
+    view *= (0.85 + 0.15 * (1.0 - r.z)) * 0.9;
+    float3 col = view;
+    float3 trim = float3(0.028, 0.026, 0.032);
+    // roof
+    float roofY = 0.36 - 0.05 * uv.x * uv.x;
+    col = mix(col, mix(float3(0.07, 0.068, 0.075), float3(0.03), smoothstep(roofY, 0.5, uv.y)), smoothstep(roofY - 0.004, roofY + 0.004, uv.y));
+    // A-pillars
+    for (int sgn = -1; sgn <= 1; sgn += 2) {
+        float sx = float(sgn);
+        float edge = 0.5 * aspect - 0.12 - (0.36 - uv.y) * 0.28;
+        float pillar = smoothstep(edge - 0.004, edge + 0.004, sx * uv.x);
+        col = mix(col, trim * (1.0 + 0.4 * smoothstep(0.0, 0.1, sx * uv.x - edge)), pillar);
+    }
+    // rear-view mirror and dash cam
+    col = mix(col, trim, AA(sdBox(uv - float2(0.0, 0.335), float2(0.012, 0.03), 0.004)));
+    float mirror = sdBox(uv - float2(0.0, 0.27), float2(0.165, 0.042), 0.035);
+    float3 mirrorCol = mix(float3(0.02), driveOutside(float2(-uv.x * 1.5, 0.2 + (uv.y - 0.27) * 2.0), t, u, specTex) * 0.35, step(mirror, -0.008));
+    col = mix(col, mirrorCol, AA(mirror));
+    col = mix(col, trim * 0.8, AA(sdBox(uv - float2(-0.08, 0.215), float2(0.022, 0.026), 0.005)));
+    col += float3(0.1, 0.6, 1.0) * exp(-length(uv - float2(-0.08, 0.21)) * 900.0) * 0.8;
+    // dashboard
+    float dashY = -0.07 - 0.03 * uv.x * uv.x;
+    float dash = 1.0 - smoothstep(dashY - 0.004, dashY + 0.004, uv.y);
+    float3 dashCol = mix(float3(0.045, 0.042, 0.05), float3(0.018, 0.017, 0.02), 1.0 - smoothstep(dashY - 0.2, dashY, uv.y)) + fbm3(uv * 120.0) * 0.012;
+    dashCol += float3(0.25, 0.3, 0.35) * exp(-abs(uv.y - dashY) * 120.0) * 0.15;
+    col = mix(col, dashCol, dash);
+    // vents
+    for (int sgn = -1; sgn <= 1; sgn += 2) {
+        float2 vc = float2(float(sgn) * 0.255, -0.16);
+        float vent = sdBox(uv - vc, float2(0.045, 0.06), 0.012);
+        float slats = 0.5 + 0.5 * sin((uv.y - vc.y) * 260.0);
+        col = mix(col, mix(float3(0.01), float3(0.06), slats), AA(vent));
+        col += float3(0.6, 0.62, 0.66) * (1.0 - smoothstep(0.0, 0.003, abs(vent))) * 0.35;
+    }
+    // dashboard screen: old-radio LED bars in the lower half (title drawn natively above)
+    float2 sc = float2(0.0, -0.17), sh = float2(0.19, 0.08);
+    float scr = sdBox(uv - sc, sh, 0.012);
+    col = mix(col, float3(0.5), (1.0 - smoothstep(0.0, 0.004, abs(scr + 0.002))) * 0.25);
+    if (scr < 0.0) {
+        float2 q = (uv - sc) / sh;
+        float3 sbg = mix(float3(0.02, 0.03, 0.06), float3(0.04, 0.03, 0.08), q.y * 0.5 + 0.5);
+        float bars = 20.0, segs = 9.0;
+        float bx = (q.x * 0.5 + 0.5) * bars;
+        float bi = floor(bx), bf = fract(bx);
+        float v = spec(specTex, bi / bars * 0.9);
+        float yy = (q.y + 0.9) / 0.95 * segs;
+        float si = floor(yy), sf = fract(yy);
+        if (yy > 0.0 && yy < segs && bf > 0.12 && bf < 0.88 && sf > 0.14 && sf < 0.86) {
+            float3 lc = si < 5.0 ? float3(0.25, 1.0, 0.45) : si < 7.0 ? float3(1.0, 0.78, 0.15) : float3(1.0, 0.22, 0.18);
+            sbg += lc * (step(si + 0.5, v * segs * 1.1) * 1.4 + 0.06);
         }
-        float3 sunCol = mix(float3(1.0, 0.22, 0.55), float3(1.0, 0.86, 0.32), smoothstep(-0.9, 0.8, yy));
-        col = mix(col, sunCol * 1.1, sunMask * stripe);
-        col += sunCol * exp(-max(d - sr, 0.0) * 9.0) * (0.3 + 0.4 * u.bass);
-        for (int l = 0; l < 2; l++) {
-            float fl = float(l);
-            float x = uv.x * (1.0 + fl * 0.6) + fl * 3.0;
-            float h = (0.035 + 0.05 * fl) * (0.5 + gnoise(float2(x * 3.0, fl * 5.0)) + 0.35 * gnoise(float2(x * 9.0, fl)));
-            h *= 1.0 - fl * 0.25;
-            if (y < h) {
-                col = mix(float3(0.05, 0.01, 0.10), float3(0.12, 0.02, 0.18), fl) * (0.6 + 0.4 * (1.0 - y / max(h, 1e-3)));
-            }
-            col += float3(1.0, 0.3, 0.7) * exp(-abs(y - h) * 500.0) * (0.25 + 0.3 * u.treble) * (1.0 - fl * 0.5);
-        }
+        col = sbg;
     } else {
-        float z = DRIVE_CAMH * DRIVE_FOCAL / max(-y, 1e-4);
-        float x = uv.x * z / DRIVE_FOCAL;
-        float rx = x - curveRel(z, travel);
-        float roadW = 1.55;
-        float fog = 1.0 - exp(-z * 0.035);
-        float gx = abs(fract(rx * 0.5) - 0.5), gz = abs(fract((z + travel) * 0.25) - 0.5);
-        float fw = fwidth(rx * 0.5) + fwidth((z + travel) * 0.25);
-        float grid = (1.0 - smoothstep(0.0, fw * 1.5 + 0.01, gx)) + (1.0 - smoothstep(0.0, fw * 1.5 + 0.01, gz));
-        col = float3(0.025, 0.006, 0.05) + float3(0.9, 0.15, 0.85) * grid * 0.6 * (0.6 + 0.6 * u.treble) * (1.0 - fog);
-        if (abs(rx) < roadW) {
-            float3 asphalt = float3(0.035, 0.03, 0.05) + horizonGlow * 0.12 * exp(-abs(rx) * 1.2) * (1.0 - fog * 0.5);
-            float dash = step(0.55, fract((z + travel) * 0.3)) * (1.0 - smoothstep(0.03, 0.06, abs(rx)));
-            float edge = 1.0 - smoothstep(0.03, 0.07, abs(abs(rx) - roadW + 0.12));
-            col = asphalt + float3(1.0, 0.9, 0.7) * dash * 0.9 + float3(0.2, 0.85, 1.0) * edge * (0.9 + 1.2 * u.bass);
-        }
-        col += float3(1.0, 0.95, 0.85) * 0.18 * exp(-pow(rx * 0.9, 2.0)) * exp(-pow((z - 7.0) * 0.18, 2.0));
-        col = mix(col, horizonGlow * 0.55, fog);
+        col += float3(0.25, 0.3, 0.6) * exp(-scr * 30.0) * 0.12;
     }
-    for (int i = 0; i < 9; i++) {
-        float fi = float(i);
-        float spacing = 9.0;
-        float z = fi * spacing + spacing - (travel - spacing * floor(travel / spacing)) + 3.0;
-        float cx = curveRel(z, travel);
-        for (int sgn = -1; sgn <= 1; sgn += 2) {
-            float side = float(sgn);
-            float lx = cx + side * 2.4;
-            float2 base = float2(lx / z * DRIVE_FOCAL, DRIVE_HORIZON - DRIVE_CAMH * DRIVE_FOCAL / z);
-            float2 top = float2((lx - side * 0.4) / z * DRIVE_FOCAL, DRIVE_HORIZON + (2.3 - DRIVE_CAMH) * DRIVE_FOCAL / z);
-            float pw = 0.015 / z;
-            float2 pa = uv - base, ba = top - base;
-            float hseg = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-            float dpole = length(pa - ba * hseg);
-            col = mix(col, float3(0.02, 0.015, 0.04), (1.0 - smoothstep(pw, pw * 1.6, dpole)) * (1.0 - smoothstep(30.0, 70.0, z)));
-            float dl = length(uv - top);
-            float bulb = 0.036 / z;
-            col += float3(1.0, 0.75, 0.45) * (exp(-dl * dl / (bulb * bulb)) * 2.5 + exp(-dl / (bulb * 4.0)) * 0.25) * (0.8 + 0.6 * u.beat) * (1.0 - smoothstep(35.0, 80.0, z));
-        }
+    // instrument cluster (right-hand drive): needles follow the music
+    float2 cl = float2(0.47 * aspect - 0.2, -0.13);
+    for (int k = 0; k < 2; k++) {
+        float2 gc = cl + float2(float(k) * 0.1 - 0.05, 0.0);
+        float gd = length(uv - gc);
+        col += float3(0.25, 0.6, 1.0) * (1.0 - smoothstep(0.0, 0.003, abs(gd - 0.04))) * 0.6;
+        float needle = (k == 0 ? 0.3 + 0.6 * u.level : 0.2 + 0.7 * u.bass) * 4.0 - 2.0;
+        float2 nd = float2(sin(needle), cos(needle));
+        float along = dot(uv - gc, nd);
+        float across = abs(dot(uv - gc, float2(nd.y, -nd.x)));
+        col += float3(1.0, 0.35, 0.2) * (1.0 - smoothstep(0.0015, 0.003, across)) * step(0.0, along) * step(along, 0.035) * 1.2;
     }
+    // steering wheel, with a soft rim light
+    float2 wc = float2(0.47 * aspect - 0.2, -0.36);
+    float wr = length(uv - wc);
+    float rim = abs(wr - 0.24) - 0.022;
+    float ang = atan2(uv.y - wc.y, uv.x - wc.x);
+    float3 wheelCol = float3(0.022) + float3(0.5, 0.48, 0.52) * pow(max(0.0, cos(ang - 1.9)), 8.0) * (1.0 - smoothstep(-0.02, 0.02, abs(wr - 0.24) - 0.012)) * 0.35;
+    col = mix(col, wheelCol, AA(rim));
+    float hub = sdBox(uv - wc, float2(0.09, 0.07), 0.04);
+    float spokes = min(sdBox(uv - wc - float2(-0.13, 0.0), float2(0.1, 0.022), 0.01), sdBox(uv - wc - float2(0.13, 0.0), float2(0.1, 0.022), 0.01));
+    col = mix(col, float3(0.026), AA(min(hub, spokes)));
+    col += u.p1.rgb * 0.012 * (1.0 + u.level);
+    #undef AA
     return float4(col, 1.0);
 }
 """#

@@ -51,6 +51,7 @@ struct NowPlayingView: View {
         return VStack(spacing: 18) {
             HStack(alignment: .bottom, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
+                  if model.settings.visualizerStyle != .drive {
                     StatusPill().fixedSize()
                     Text(player.title.isEmpty ? "Loading…" : player.title)
                         .font(Theme.Fonts.display(28))
@@ -63,6 +64,7 @@ struct NowPlayingView: View {
                             .foregroundStyle(Theme.Palette.textSecondary)
                             .lineLimit(1)
                     }
+                  }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
