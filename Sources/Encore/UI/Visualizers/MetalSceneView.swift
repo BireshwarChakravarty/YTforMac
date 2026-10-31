@@ -3,15 +3,14 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes.
 enum MetalScene: String {
-    case voxels, tide, warp, vortex, contours
+    case aurora, silk, orb, tide
 
     var fragmentFunction: String {
         switch self {
-        case .voxels: return "voxelFragment"
+        case .aurora: return "auroraFragment"
+        case .silk: return "silkFragment"
+        case .orb: return "orbFragment"
         case .tide: return "tideBackground"
-        case .warp: return "warpFragment"
-        case .vortex: return "vortexFragment"
-        case .contours: return "contourFragment"
         }
     }
 }
@@ -131,7 +130,7 @@ struct MetalSceneView: NSViewRepresentable {
 /// Feeds the visualiser state into the shaders every frame.
 final class SceneRenderer: NSObject, MTKViewDelegate {
     private let visualizer: VisualizerEngine
-    private var scene: MetalScene = .voxels
+    private var scene: MetalScene = .aurora
     private var palette: ArtworkPalette = .brand
     private var colors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
     private var targetColors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
@@ -216,7 +215,7 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             let i0 = Int(x), i1 = min(bands.count - 1, i0 + 1), f = x - Float(i0)
             spectrum[i] = UInt8(max(0, min(255, (bands[i0] * (1 - f) + bands[i1] * f) * 255)))
         }
-        scroll += dt * 18
+        scroll += dt * 10   // calm: about ten history rows per second
         if scroll >= 1 {
             scroll = 0
             history.replaceSubrange(64..<(64 * 64), with: history[0..<(64 * 63)])
@@ -261,7 +260,7 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             encoder.setRenderPipelineState(points)
             encoder.setVertexBytes(&u, length: MemoryLayout<SceneUniforms>.stride, index: 0)
             encoder.setVertexTexture(histTexture, index: 1)
-            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: 180 * 90)
+            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: 220 * 110)
         }
         encoder.endEncoding()
         buffer.present(drawable)

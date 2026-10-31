@@ -14,14 +14,10 @@ struct SidebarView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 8, trailing: 4))
 
             Section("YouTube") {
-                ForEach(Destination.browse) { d in
-                    Label(d.title, systemImage: d.symbol).tag(d)
-                }
+                ForEach(Destination.browse) { d in SidebarRow(destination: d).tag(d) }
             }
             Section("Library") {
-                ForEach(Destination.library) { d in
-                    Label(d.title, systemImage: d.symbol).tag(d)
-                }
+                ForEach(Destination.library) { d in SidebarRow(destination: d).tag(d) }
             }
         }
         .listStyle(.sidebar)
@@ -85,18 +81,39 @@ private struct AccountFooter: View {
 
     var body: some View {
         let browser = model.browser
+        let name = browser.accountName
         HStack(spacing: 10) {
             avatar
             VStack(alignment: .leading, spacing: 1) {
-                Text(browser.isSignedIn ? "Signed in" : "Not signed in")
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.Palette.textTertiary)
-                Text(browser.isSignedIn ? "YouTube account" : "Sign in to YouTube")
-                    .font(Theme.Fonts.title(12.5))
+                if browser.isSignedIn {
+                    Text(name.isEmpty ? "Signed in" : name)
+                        .font(Theme.Fonts.title(13))
+                        .lineLimit(1)
+                    Text(browser.accountHandle.isEmpty ? "YouTube" : browser.accountHandle)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.Palette.textTertiary)
+                        .lineLimit(1)
+                } else {
+                    Text("Sign in to YouTube").font(Theme.Fonts.title(13))
+                    Text("For your feed and subscriptions")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.Palette.textTertiary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             Menu {
                 if browser.isSignedIn {
+                    Button("Open My Channel") {
+                        if !browser.accountHandle.isEmpty, let url = URL(string: "https://www.youtube.com/\(browser.accountHandle)") {
+                            model.browse(url)
+                        }
+                    }
+                    .disabled(browser.accountHandle.isEmpty)
+                    Button("Switch Account…") {
+                        if let url = URL(string: "https://www.youtube.com/channel_switcher") { model.browse(url) }
+                    }
+                    Divider()
                     Button("Sign Out of YouTube", role: .destructive) { browser.signOut() }
                 } else {
                     Button("Sign In…") { model.destination = .home; browser.signIn() }
@@ -104,9 +121,14 @@ private struct AccountFooter: View {
                 Divider()
                 Button("Settings…") { openSettings() }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: 15))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.Palette.textSecondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
         }
@@ -126,12 +148,27 @@ private struct AccountFooter: View {
             } placeholder: {
                 Circle().fill(Theme.signature)
             }
-            .frame(width: 30, height: 30)
+            .frame(width: 32, height: 32)
             .clipShape(Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.12)))
         } else {
             Image(systemName: model.browser.isSignedIn ? "person.crop.circle.fill" : "person.crop.circle.badge.plus")
-                .font(.system(size: 26))
+                .font(.system(size: 28))
                 .foregroundStyle(Theme.signature)
+        }
+    }
+}
+
+private struct SidebarRow: View {
+    let destination: Destination
+    var body: some View {
+        Label {
+            Text(destination.title).font(Theme.Fonts.body(13))
+        } icon: {
+            Image(systemName: destination.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(LinearGradient(colors: [Theme.Palette.coral, Theme.Palette.magenta],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
         }
     }
 }

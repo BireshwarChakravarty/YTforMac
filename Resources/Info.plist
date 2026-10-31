@@ -26,6 +26,8 @@
     <string>public.app-category.music</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Encore listens to the sound it is playing so the visualisers can move with the music. Nothing is recorded or saved.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticTermination</key>

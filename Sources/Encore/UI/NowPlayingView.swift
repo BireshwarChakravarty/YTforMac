@@ -91,7 +91,7 @@ struct NowPlayingView: View {
     }
 }
 
-/// "Audio only · 144p data saver", "Ad", "Live".
+/// "Audio only · 1080p stream", "Ad", "Live".
 struct StatusPill: View {
     @Environment(AppModel.self) private var model
 
@@ -101,8 +101,8 @@ struct StatusPill: View {
             if player.isAd { return "Ad playing · skips when allowed" }
             if player.isLive { return "Live" }
             if model.settings.mode == .audio {
-                let q = model.settings.audioModeQuality
-                return q == .auto ? "Audio only" : "Audio only · \(q.title) data saver"
+                if model.settings.audioModeQuality == .tiny { return "Audio only · data saver" }
+                return player.currentQuality.isEmpty ? "Audio only · full quality" : "Audio only · \(player.currentQuality) stream"
             }
             return "Now playing"
         }()
@@ -153,69 +153,89 @@ struct AmbientBackground: View {
     }
 }
 
-/// Chip strip for choosing a visualiser.
+/// A compact button that opens a grid of visualisers.
 struct VisualizerPicker: View {
     @Environment(AppModel.self) private var model
-    @State private var expanded = false
+    @State private var open = false
 
     var body: some View {
         let current = model.settings.visualizerStyle
-        HStack(spacing: 6) {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: current.symbol)
-                    Text(current.title)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .rotationEffect(.degrees(expanded ? 180 : 0))
-                }
-                .font(Theme.Fonts.title(12.5))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .contentShape(Rectangle())
+        Button { open.toggle() } label: {
+            HStack(spacing: 7) {
+                Image(systemName: current.symbol)
+                Text(current.title)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(open ? 180 : 0))
             }
-            .buttonStyle(.plain)
-            .help("Choose a visualiser (⌘⇧V cycles)")
+            .font(Theme.Fonts.title(12.5))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .encoreGlass(cornerRadius: 12)
+        .help("Choose a visualiser (\u{21E7}\u{2318}V cycles)")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VisualizerGrid { open = false }
+                .environment(model)
+        }
+    }
+}
 
-            if expanded {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(VisualizerStyle.allCases) { style in
-                            Button {
-                                model.settings.visualizerStyle = style
-                            } label: {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: style.symbol).font(.system(size: 10, weight: .bold))
-                                        Text(style.title).font(Theme.Fonts.title(12))
-                                        if style.isGPU {
-                                            Text("3D").font(.system(size: 8, weight: .black, design: .rounded))
-                                                .padding(.horizontal, 3).padding(.vertical, 1)
-                                                .background(Capsule().fill(Theme.signature))
-                                        }
+private struct VisualizerGrid: View {
+    var onPick: () -> Void
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let current = model.settings.visualizerStyle
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Visualiser").font(Theme.Fonts.title(13)).foregroundStyle(Theme.Palette.textSecondary)
+            LazyVGrid(columns: [GridItem(.fixed(196), spacing: 8), GridItem(.fixed(196), spacing: 8)], spacing: 8) {
+                ForEach(VisualizerStyle.allCases) { style in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.35)) { model.settings.visualizerStyle = style }
+                        onPick()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: style.symbol)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.signature)
+                                .frame(width: 30, height: 30)
+                                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.06)))
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 5) {
+                                    Text(style.title).font(Theme.Fonts.title(13))
+                                    if style.isGPU {
+                                        Text("3D").font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                                            .padding(.horizontal, 4).padding(.vertical, 1)
+                                            .background(Capsule().fill(.white.opacity(0.12)))
                                     }
-                                    Text(style.caption).font(.system(size: 9.5, weight: .medium, design: .rounded))
-                                        .foregroundStyle(Theme.Palette.textTertiary)
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(style == current ? Color.white.opacity(0.14) : .clear))
-                                .contentShape(Rectangle())
+                                Text(style.caption)
+                                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Theme.Palette.textTertiary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .buttonStyle(.plain)
+                            Spacer(minLength: 0)
                         }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(style == current ? Color.white.opacity(0.12) : Color.white.opacity(0.03))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(style == current ? Theme.Palette.magenta.opacity(0.6) : .clear, lineWidth: 1))
+                        )
+                        .contentShape(Rectangle())
                     }
-                    .padding(.trailing, 6)
+                    .buttonStyle(.plain)
                 }
-                .frame(maxWidth: 640)
-                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
-        .padding(3)
-        .encoreGlass(cornerRadius: 13)
+        .padding(14)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -350,36 +370,75 @@ struct AudioSourceBadge: View {
     var compact = false
     @Environment(AppModel.self) private var model
 
+    private enum State { case live, simulated(String?), needsPermission }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            let player = model.player
-            let live = model.visualizer.isLive && player.isPlaying
-            let reason: String? = {
-                if live { return nil }
-                if !player.isPlaying { return "paused" }
-                if !model.settings.visualizerUsesAudio { return "analyser off" }
-                if player.isLive { return "live stream" }
-                return nil
-            }()
-            if player.hasMedia {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(live ? Color.green : (player.isPlaying ? Color.orange : Theme.Palette.textTertiary))
-                        .frame(width: 7, height: 7)
-                        .shadow(color: live ? .green.opacity(0.8) : .clear, radius: 4)
-                    Text(live ? "Live audio" : (reason.map { "Simulated · \($0)" } ?? "Simulated"))
-                        .font(.system(size: compact ? 10 : 11.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(Theme.Palette.textSecondary)
+            let state = currentState
+            if model.player.hasMedia {
+                Button {
+                    if case .needsPermission = state { AudioTap.openPrivacySettings() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(color(state))
+                            .frame(width: 7, height: 7)
+                            .shadow(color: isLive(state) ? .green.opacity(0.8) : .clear, radius: 4)
+                        Text(label(state))
+                            .font(.system(size: compact ? 10 : 11.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                    }
+                    .padding(.horizontal, compact ? 8 : 11)
+                    .padding(.vertical, compact ? 4 : 7)
+                    .background(Capsule().fill(.black.opacity(0.28)).overlay(Capsule().strokeBorder(Theme.Palette.stroke)))
+                    .contentShape(Capsule())
                 }
-                .padding(.horizontal, compact ? 8 : 11)
-                .padding(.vertical, compact ? 4 : 7)
-                .background(Capsule().fill(.black.opacity(0.25)).overlay(Capsule().strokeBorder(Theme.Palette.stroke)))
-                .help(live
-                      ? "The visualiser is reacting to the actual audio."
-                      : "The visualiser is following a tempo-matched simulation. This happens for live streams, while the analyser is starting, or when \u{201C}React to the actual audio\u{201D} is off in Settings.")
-                .animation(.easeInOut(duration: 0.25), value: live)
+                .buttonStyle(.plain)
+                .help(help(state))
             }
         }
         .fixedSize()
+    }
+
+    private var currentState: State {
+        let player = model.player
+        let v = model.visualizer
+        if v.isLive && player.isPlaying { return .live }
+        if !player.isPlaying { return .simulated("paused") }
+        if !model.settings.visualizerUsesAudio { return .simulated("turned off") }
+        switch v.audioStatus {
+        case .noPermission: return .needsPermission
+        case .unsupported: return .simulated("needs macOS 14.2")
+        case .failed: return .simulated("capture failed")
+        default: return .simulated(nil)
+        }
+    }
+
+    private func isLive(_ s: State) -> Bool { if case .live = s { return true }; return false }
+
+    private func color(_ s: State) -> Color {
+        switch s {
+        case .live: return .green
+        case .needsPermission: return .orange
+        case .simulated(let r): return r == "paused" ? Theme.Palette.textTertiary : .orange
+        }
+    }
+
+    private func label(_ s: State) -> String {
+        switch s {
+        case .live: return "Live audio"
+        case .needsPermission: return compact ? "Allow audio access" : "Allow audio access…"
+        case .simulated(let r): return r.map { "Simulated · \($0)" } ?? "Simulated"
+        }
+    }
+
+    private func help(_ s: State) -> String {
+        switch s {
+        case .live: return "The visualiser is following the actual sound."
+        case .needsPermission:
+            return "macOS hasn't given Encore permission to listen to its own audio. Click to open System Settings → Privacy & Security → Screen & System Audio Recording, and turn on Encore under \u{201C}System Audio Recording Only\u{201D}."
+        case .simulated:
+            return "The visualiser is following a gentle simulation. It switches to the real sound automatically once audio is flowing."
+        }
     }
 }

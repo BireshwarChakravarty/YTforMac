@@ -12,6 +12,7 @@ struct EncoreApp: App {
                 .environment(model)
                 .preferredColorScheme(model.settings.appearance == .dark ? .dark : nil)
                 .tint(Theme.Palette.magenta)
+                .accentColor(Theme.Palette.magenta)
         }
         .defaultSize(width: 1280, height: 800)
         .windowToolbarStyle(.unified)

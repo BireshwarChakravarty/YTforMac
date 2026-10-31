@@ -26,6 +26,8 @@ final class VisualizerEngine {
     private(set) var isLive = false
 
     var isPlaying = false
+    /// State of the system-audio tap feeding real spectrum data.
+    var audioStatus: AudioTap.Status = .idle
     /// Debug/demo: animate as if playing (used by `--snapshot` on CI, where nothing can play).
     var forceDemo = false
     var sensitivity: Float = 1
@@ -63,8 +65,9 @@ final class VisualizerEngine {
             synthesize(time: now)
         }
 
-        let attack = 1 - exp(-dt * 28)
-        let release = 1 - exp(-dt * 7)
+        // Fast enough to feel the beat, slow enough to stay soothing.
+        let attack = 1 - exp(-dt * 16)
+        let release = 1 - exp(-dt * 4)
         var lowSum: Float = 0
         for i in 0..<Self.bandCount {
             let goal = isPlaying ? target[i] : idle(i, now)
@@ -74,9 +77,9 @@ final class VisualizerEngine {
             if i < 7 { lowSum += bands[i] }
         }
         let low = lowSum / 7
-        bass += (low - bass) * (low > bass ? (1 - exp(-dt * 40)) : (1 - exp(-dt * 6)))
+        bass += (low - bass) * (low > bass ? (1 - exp(-dt * 20)) : (1 - exp(-dt * 3)))
         let lvlGoal = isPlaying ? max(targetLevel, bands.reduce(0, +) / Float(Self.bandCount) * 1.4) : 0.02
-        level += (lvlGoal - level) * (1 - exp(-dt * 10))
+        level += (lvlGoal - level) * (1 - exp(-dt * 6))
         phase += Double(dt) * (0.25 + Double(level) * 1.6)
     }
 

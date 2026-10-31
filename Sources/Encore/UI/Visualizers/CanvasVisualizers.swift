@@ -60,72 +60,70 @@ final class CanvasVizState {
 @MainActor
 enum CanvasPainter {
 
-    // MARK: Halo — artwork ringed by radial bars, an echo ring and orbiting sparks.
+    // MARK: Halo — the artwork, ringed by soft liquid rings of light.
 
     static func halo(_ ctx: inout GraphicsContext, size: CGSize, engine e: VisualizerEngine, state s: CanvasVizState,
                      artwork: NSImage?, time t: Double, compact: Bool) {
         let w = size.width, h = size.height
-        let cx = w / 2, cy = compact ? h / 2 : h * 0.42
-        let base = min(w, h) * (compact ? 0.24 : 0.17)
-        let R = base * (1 + Double(e.bass) * 0.07)
-        let rot = e.phase * 0.12
+        let cx = w / 2, cy = compact ? h / 2 : h * 0.43
+        let base = min(w, h) * (compact ? 0.26 : 0.17)
+        let R = base * (1 + Double(e.bass) * 0.05)
+        let center = CGPoint(x: cx, y: cy)
 
-        var glowCtx = ctx
-        glowCtx.blendMode = .plusLighter
-        glowCtx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
+        // Ambient bloom behind everything.
+        var glow = ctx
+        glow.blendMode = .plusLighter
+        glow.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
             Gradient(stops: [
-                .init(color: s.colors[1].color(0.22 + Double(e.bass) * 0.25), location: 0),
-                .init(color: s.colors[2].color(0.08), location: 0.45),
+                .init(color: s.colors[1].color(0.20 + Double(e.level) * 0.25), location: 0),
+                .init(color: s.colors[2].color(0.07), location: 0.5),
                 .init(color: .clear, location: 1),
-            ]), center: CGPoint(x: cx, y: cy), startRadius: R * 0.6, endRadius: R * 3.2))
+            ]), center: center, startRadius: R * 0.5, endRadius: R * 3.6))
 
-        let count = 144
-        let vals = e.resampled(count / 2 + 1)
-        for pass in 0..<2 {
-            for i in 0..<count {
-                let k = i <= count / 2 ? i : count - i
-                let v = Double(vals[k])
-                let a = -Double.pi / 2 + rot + Double(i) / Double(count) * .pi * 2
-                let r0 = R + 10, len = 4 + v * base * 1.15
-                var p = Path()
-                p.move(to: CGPoint(x: cx + cos(a) * r0, y: cy + sin(a) * r0))
-                p.addLine(to: CGPoint(x: cx + cos(a) * (r0 + len), y: cy + sin(a) * (r0 + len)))
-                let c = s.at(Double(i) / Double(count) + e.phase * 0.05)
-                glowCtx.stroke(p, with: .color(c.color(pass == 0 ? 0.14 : 0.92)),
-                               style: StrokeStyle(lineWidth: pass == 0 ? 7 : 2.4, lineCap: .round))
+        // Three liquid rings, each a smooth closed curve whose radius follows the spectrum.
+        let points = 120
+        let vals = e.resampled(points / 2 + 1)
+        func ring(_ k: Int) -> Path {
+            let offset = R + 12 + Double(k) * (base * 0.16)
+            let amp = base * (0.62 - Double(k) * 0.14)
+            let spin = e.phase * (0.05 + Double(k) * 0.025) * (k % 2 == 0 ? 1 : -1)
+            var pts: [CGPoint] = []
+            for i in 0..<points {
+                let idx = i <= points / 2 ? i : points - i
+                let v = Double(vals[idx])
+                let wobble = 0.06 * sin(Double(i) * 0.31 + t * (0.6 + Double(k) * 0.2))
+                let r = offset + (v + wobble) * amp
+                let a = -Double.pi / 2 + spin + Double(i) / Double(points) * .pi * 2
+                pts.append(CGPoint(x: cx + cos(a) * r, y: cy + sin(a) * r))
+            }
+            var path = Path()
+            let mid = { (p: CGPoint, q: CGPoint) in CGPoint(x: (p.x + q.x) / 2, y: (p.y + q.y) / 2) }
+            path.move(to: mid(pts[points - 1], pts[0]))
+            for i in 0..<points { path.addQuadCurve(to: mid(pts[i], pts[(i + 1) % points]), control: pts[i]) }
+            path.closeSubpath()
+            return path
+        }
+        let rings = (0..<3).map(ring)
+        ctx.drawLayer { layer in
+            layer.blendMode = .plusLighter
+            layer.addFilter(.blur(radius: compact ? 6 : 14))
+            for (k, path) in Array(rings.enumerated()).reversed() {
+                layer.fill(path, with: .radialGradient(
+                    Gradient(colors: [s.at(Double(k) * 0.3 + e.phase * 0.02).color(0), s.at(Double(k) * 0.3 + e.phase * 0.02).color(0.5)]),
+                    center: center, startRadius: R, endRadius: R + base * 1.2))
             }
         }
-
-        // Inner echo ring.
-        var echo = Path()
-        for i in 0...count {
-            let k = i <= count / 2 ? i : count - i
-            let v = Double(vals[k])
-            let a = -Double.pi / 2 - rot * 0.6 + Double(i) / Double(count) * .pi * 2
-            let r = R - 14 - v * base * 0.18
-            let pt = CGPoint(x: cx + cos(a) * r, y: cy + sin(a) * r)
-            i == 0 ? echo.move(to: pt) : echo.addLine(to: pt)
-        }
-        glowCtx.stroke(echo, with: .color(s.colors[0].color(0.35)), lineWidth: 1.5)
-
-        // Orbiting sparks with tails.
-        if !compact {
-            for sIdx in 0..<3 {
-                let a0 = t * (0.4 + Double(sIdx) * 0.17) + Double(sIdx) * 2.1
-                let rr = R * (1.95 + Double(sIdx) * 0.22 + Double(e.bass) * 0.2)
-                for k in 0..<14 {
-                    let aa = a0 - Double(k) * 0.035
-                    let rad = 2.2 * (1 - Double(k) / 16)
-                    let rect = CGRect(x: cx + cos(aa) * rr - rad, y: cy + sin(aa) * rr - rad, width: rad * 2, height: rad * 2)
-                    glowCtx.fill(Path(ellipseIn: rect), with: .color(s.at(Double(sIdx) / 3).color((1 - Double(k) / 14) * 0.55)))
-                }
-            }
+        var lines = ctx
+        lines.blendMode = .plusLighter
+        for (k, path) in rings.enumerated() {
+            let c = s.at(Double(k) * 0.3 + e.phase * 0.02)
+            lines.stroke(path, with: .color(c.color(0.75 - Double(k) * 0.18)), lineWidth: compact ? 1.2 : 1.6)
         }
 
         // Artwork disc.
         let disc = CGRect(x: cx - R, y: cy - R, width: R * 2, height: R * 2)
         ctx.drawLayer { layer in
-            layer.addFilter(.shadow(color: .black.opacity(0.55), radius: 30))
+            layer.addFilter(.shadow(color: .black.opacity(0.5), radius: 26))
             layer.fill(Path(ellipseIn: disc), with: .color(.black))
         }
         ctx.drawLayer { layer in
@@ -138,16 +136,13 @@ enum CanvasPainter {
                                                             startPoint: disc.origin, endPoint: CGPoint(x: disc.maxX, y: disc.maxY)))
             }
             layer.fill(Path(disc), with: .radialGradient(
-                Gradient(colors: [.white.opacity(0.12), .black.opacity(0.25)]),
+                Gradient(colors: [.white.opacity(0.10), .black.opacity(0.22)]),
                 center: CGPoint(x: cx - R * 0.3, y: cy - R * 0.4), startRadius: R * 0.1, endRadius: R))
         }
-        let rim = Gradient(colors: [s.colors[0].color(), s.colors[1].color(), s.colors[2].color(), s.colors[0].color()])
-        ctx.stroke(Path(ellipseIn: disc.insetBy(dx: -1.5, dy: -1.5)),
-                   with: .conicGradient(rim, center: CGPoint(x: cx, y: cy), angle: .radians(e.phase * 0.8)),
-                   lineWidth: 3)
+        ctx.stroke(Path(ellipseIn: disc.insetBy(dx: -1, dy: -1)), with: .color(.white.opacity(0.18)), lineWidth: 1)
     }
 
-    // MARK: Spectrum — mirrored capsule bars with glow, reflections and falling peaks.
+    // MARK: Spectrum — a smooth, mirrored waveform of rounded bars with a soft glow.
 
     struct SpectrumOptions {
         var count = 76
@@ -158,50 +153,68 @@ enum CanvasPainter {
         var mini = false
         var reflect = true
         var peaks = true
+        var mirroredVertical = false
     }
 
     static func spectrum(_ ctx: inout GraphicsContext, size: CGSize, engine e: VisualizerEngine, state s: CanvasVizState,
                          options o: SpectrumOptions = .init()) {
         let w = size.width, h = size.height
-        let mid = o.baseline ?? h * 0.5
-        let maxH = o.maxHeight ?? h * 0.34
-        let pad = o.padding ?? w * 0.08
+        let mid = o.baseline ?? h * 0.45
+        let maxH = o.maxHeight ?? h * (o.mirroredVertical ? 0.24 : 0.34)
+        let pad = o.padding ?? w * 0.1
         let span = w - pad * 2
         let bw = max(1, span / CGFloat(o.count) - o.gap)
         let vals = e.resampled(o.count, mirrored: true)
 
-        if !o.mini {
-            var glow = ctx
-            glow.blendMode = .plusLighter
-            glow.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
-                Gradient(colors: [s.colors[1].color(0.18 + Double(e.bass) * 0.2), .clear]),
-                center: CGPoint(x: w / 2, y: mid), startRadius: 10, endRadius: w * 0.5))
+        func bars() -> [(CGRect, Double)] {
+            (0..<o.count).map { i in
+                let v = CGFloat(vals[i])
+                let bh = max(bw * (o.mirroredVertical ? 0.6 : 1), v * maxH)
+                let x = pad + CGFloat(i) * (bw + o.gap) + o.gap / 2
+                let edge = abs(Double(i) / Double(max(1, o.count - 1)) * 2 - 1)
+                let rect = o.mirroredVertical
+                    ? CGRect(x: x, y: mid - bh, width: bw, height: bh * 2)
+                    : CGRect(x: x, y: mid - bh, width: bw, height: bh)
+                return (rect, edge)
+            }
         }
-        for i in 0..<o.count {
-            let v = max(0.02, CGFloat(vals[i]))
-            let bh = max(bw, v * maxH)
-            let x = pad + CGFloat(i) * (bw + o.gap) + o.gap / 2
-            let edge = abs(Double(i) / Double(max(1, o.count - 1)) * 2 - 1)
-            let shading = GraphicsContext.Shading.linearGradient(
-                Gradient(colors: [s.at(0.34 + edge * 0.6 + e.phase * 0.02).color(), s.colors[0].color()]),
-                startPoint: CGPoint(x: x, y: mid - bh), endPoint: CGPoint(x: x, y: mid))
-            if !o.mini {
-                var halo = ctx
-                halo.opacity = 0.22
-                halo.fill(Path(roundedRect: CGRect(x: x - 2, y: mid - bh - 2, width: bw + 4, height: bh + 4), cornerRadius: (bw + 4) / 2), with: shading)
+        let shapes = bars()
+        func shading(_ rect: CGRect, _ edge: Double) -> GraphicsContext.Shading {
+            let top = s.at(0.34 + edge * 0.55 + e.phase * 0.015).color()
+            let bottom = s.colors[0].color()
+            return .linearGradient(Gradient(colors: o.mirroredVertical ? [top, bottom, top] : [top, bottom]),
+                                   startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.minX, y: rect.maxY))
+        }
+
+        if !o.mini {
+            var bloom = ctx
+            bloom.blendMode = .plusLighter
+            bloom.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
+                Gradient(colors: [s.colors[1].color(0.16 + Double(e.level) * 0.22), .clear]),
+                center: CGPoint(x: w / 2, y: mid), startRadius: 10, endRadius: w * 0.55))
+            // Soft glow pass.
+            ctx.drawLayer { layer in
+                layer.blendMode = .plusLighter
+                layer.addFilter(.blur(radius: 12))
+                layer.opacity = 0.7
+                for (rect, edge) in shapes {
+                    layer.fill(Path(roundedRect: rect, cornerRadius: bw / 2), with: shading(rect, edge))
+                }
             }
-            ctx.fill(Path(roundedRect: CGRect(x: x, y: mid - bh, width: bw, height: bh), cornerRadius: bw / 2), with: shading)
-            if o.reflect {
-                let rh = bh * 0.55
-                ctx.fill(Path(roundedRect: CGRect(x: x, y: mid + 4, width: bw, height: rh), cornerRadius: bw / 2),
-                         with: .linearGradient(Gradient(colors: [s.colors[0].color(0.32), s.colors[0].color(0)]),
-                                               startPoint: CGPoint(x: x, y: mid + 4), endPoint: CGPoint(x: x, y: mid + 4 + rh)))
+        }
+        for (rect, edge) in shapes {
+            ctx.fill(Path(roundedRect: rect, cornerRadius: bw / 2), with: shading(rect, edge))
+            if o.reflect && !o.mirroredVertical {
+                let rh = rect.height * 0.5
+                ctx.fill(Path(roundedRect: CGRect(x: rect.minX, y: mid + 4, width: bw, height: rh), cornerRadius: bw / 2),
+                         with: .linearGradient(Gradient(colors: [s.colors[0].color(0.3), s.colors[0].color(0)]),
+                                               startPoint: CGPoint(x: rect.minX, y: mid + 4), endPoint: CGPoint(x: rect.minX, y: mid + 4 + rh)))
             }
-            if o.peaks {
+            if o.peaks && !o.mirroredVertical {
                 let k = Int((edge * Double(VisualizerEngine.bandCount - 1)).rounded())
                 let pk = CGFloat(e.peaks[k]) * maxH
-                ctx.fill(Path(roundedRect: CGRect(x: x, y: mid - max(bh, pk) - 7, width: bw, height: 3), cornerRadius: 1.5),
-                         with: .color(.white.opacity(0.85)))
+                ctx.fill(Path(roundedRect: CGRect(x: rect.minX, y: mid - max(rect.height, pk) - 6, width: bw, height: 2), cornerRadius: 1),
+                         with: .color(.white.opacity(0.45)))
             }
         }
     }
@@ -259,54 +272,6 @@ enum CanvasPainter {
             path.addQuadCurve(to: CGPoint(x: (p.x + q.x) / 2, y: (p.y + q.y) / 2), control: p)
         }
         if let last = pts.last { path.addLine(to: last) }
-    }
-
-    // MARK: Nebula — particles streaming out of a pulsing core.
-
-    static func nebula(_ ctx: inout GraphicsContext, size: CGSize, engine e: VisualizerEngine, state s: CanvasVizState) {
-        let w = size.width, h = size.height
-        let cx = w / 2, cy = h * 0.42, r0 = min(w, h) * 0.06
-        let dt = s.dt
-        if s.particles.count < 420 {
-            for _ in 0..<(420 - s.particles.count) {
-                s.particles.append(.init(a: .random(in: 0...(2 * .pi)), r: r0 * .random(in: 0.5...1.5),
-                                         s: .random(in: 0.4...1.4), c: .random(in: 0...1), z: .random(in: 0...1)))
-            }
-        }
-        var g = ctx
-        g.blendMode = .plusLighter
-        let n = VisualizerEngine.bandCount
-        let limit = max(w, h) * 0.62
-        for i in s.particles.indices {
-            var p = s.particles[i]
-            let band = Double(e.bands[Int(p.c * Double(n - 1) * 0.8)])
-            p.r += (20 + p.s * 60) * (0.25 + Double(e.level) * 2.6 + band) * dt
-            p.a += (0.15 + Double(e.bass) * 0.9) * dt * (p.z > 0.5 ? 1 : -1) * (40 / (p.r + 40))
-            let life = 1 - p.r / limit
-            if life <= 0 {
-                p.r = r0 * .random(in: 0.4...1.2); p.a = .random(in: 0...(2 * .pi))
-                s.particles[i] = p
-                continue
-            }
-            s.particles[i] = p
-            let x = cx + cos(p.a) * p.r, y = cy + sin(p.a) * p.r * 0.78
-            let size = (0.8 + p.z * 1.8) * (1 + band)
-            // Short motion streak instead of trails: cheap and crisp.
-            let tail = min(18, (20 + p.s * 60) * (0.25 + Double(e.level) * 2.6 + band) * 0.05)
-            var streak = Path()
-            streak.move(to: CGPoint(x: x, y: y))
-            streak.addLine(to: CGPoint(x: cx + cos(p.a) * (p.r - tail), y: cy + sin(p.a) * (p.r - tail) * 0.78))
-            let color = s.at(p.c + e.phase * 0.04).color(min(1, life * 1.4) * (0.35 + band * 0.65))
-            g.stroke(streak, with: .color(color), style: StrokeStyle(lineWidth: size, lineCap: .round))
-        }
-        let orbR = r0 * (1.6 + Double(e.bass) * 1.4)
-        g.fill(Path(ellipseIn: CGRect(x: cx - orbR * 3, y: cy - orbR * 3, width: orbR * 6, height: orbR * 6)), with: .radialGradient(
-            Gradient(stops: [
-                .init(color: .white.opacity(0.95), location: 0),
-                .init(color: s.colors[0].color(0.9), location: 0.12),
-                .init(color: s.colors[1].color(0.35), location: 0.4),
-                .init(color: .clear, location: 1),
-            ]), center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: orbR * 3))
     }
 
     // MARK: Ridgeline — stacked spectrum lines receding into the distance.

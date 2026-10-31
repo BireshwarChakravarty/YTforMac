@@ -12,6 +12,8 @@ final class AppModel {
     let player: PlayerEngine
     let browser: BrowserEngine
     let visualizer = VisualizerEngine()
+    @ObservationIgnored let audioTap = AudioTap()
+    @ObservationIgnored private var visualizerOnScreen = false
     @ObservationIgnored private(set) var nowPlaying: NowPlayingCenter!
 
     /// The selected sidebar destination in the main window.
@@ -36,9 +38,17 @@ final class AppModel {
             guard let self else { return }
             self.nowPlaying.update()
             self.visualizer.isPlaying = self.player.isPlaying
+            self.audioTap.setPlaying(self.player.isPlaying)
         }
-        player.onVisualizerFrame = { [weak self] bands, level in
-            self?.visualizer.ingest(bands: bands, level: level)
+        player.onVisualizerDemand = { [weak self] onScreen in
+            self?.visualizerOnScreen = onScreen
+            self?.refreshAudioCapture()
+        }
+        audioTap.onFrame = { [weak self] bands, level in
+            MainActor.assumeIsolated { self?.visualizer.ingest(bands: bands, level: level) }
+        }
+        audioTap.onStatus = { [weak self] status in
+            MainActor.assumeIsolated { self?.visualizer.audioStatus = status }
         }
         browser.onPlayRequest = { [weak self] url in
             self?.play(url)
@@ -159,6 +169,13 @@ final class AppModel {
     }
 
     func toggleMode() { setMode(settings.mode.toggled) }
+
+    /// Runs the system-audio tap only while a visualiser is on screen.
+    func refreshAudioCapture() {
+        let active = visualizerOnScreen && settings.visualizerUsesAudio
+        audioTap.setActive(active, playing: player.isPlaying)
+        if !active { visualizer.audioStatus = settings.visualizerUsesAudio ? .idle : .idle }
+    }
 
     func cycleVisualizer() {
         settings.visualizerStyle = settings.visualizerStyle.next

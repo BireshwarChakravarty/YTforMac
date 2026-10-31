@@ -133,13 +133,49 @@ enum Scripts {
       };
       if (window.__encoreInitialClean) window.__encore.setClean(true);
 
-      // 5. Tell native about the signed-in avatar when it shows up.
-      let lastAvatar = '';
-      setInterval(() => {
-        const img = document.querySelector('#avatar-btn img, ytd-topbar-menu-button-renderer img#img');
-        const src = img && img.src && img.src.startsWith('http') ? img.src : '';
-        if (src && src !== lastAvatar) { lastAvatar = src; post('avatar', { url: src }); }
-      }, 3000);
+      // 5. Signed-in account: name, handle and photo from YouTube's own
+      //    account menu endpoint (the same request the avatar menu makes).
+      const text = (t) => !t ? '' : (t.simpleText || (t.runs || []).map(r => r.text).join(''));
+      const find = (obj, key, depth = 0) => {
+        if (!obj || typeof obj !== 'object' || depth > 14) return null;
+        if (obj[key]) return obj[key];
+        for (const k in obj) { const r = find(obj[k], key, depth + 1); if (r) return r; }
+        return null;
+      };
+      const sapisidHash = async () => {
+        const m = document.cookie.match(/(?:^|; )(?:SAPISID|__Secure-3PAPISID)=([^;]+)/);
+        if (!m || !window.crypto || !crypto.subtle) return null;
+        const ts = Math.floor(Date.now() / 1000);
+        const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(`${ts} ${m[1]} ${location.origin}`));
+        const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return `SAPISIDHASH ${ts}_${hex}`;
+      };
+      let accountTries = 0, accountDone = false;
+      const fetchAccount = async () => {
+        if (accountDone || accountTries > 8) return;
+        accountTries++;
+        const cfg = window.ytcfg && window.ytcfg.get ? window.ytcfg : null;
+        if (!cfg || !cfg.get('INNERTUBE_API_KEY')) return;
+        if (!cfg.get('LOGGED_IN')) { accountDone = true; post('account', { signedIn: false }); return; }
+        try {
+          const headers = { 'Content-Type': 'application/json', 'X-Origin': location.origin,
+                            'X-Goog-AuthUser': String(cfg.get('SESSION_INDEX') || 0) };
+          const auth = await sapisidHash();
+          if (auth) headers['Authorization'] = auth;
+          const res = await fetch(`/youtubei/v1/account/account_menu?key=${cfg.get('INNERTUBE_API_KEY')}&prettyPrint=false`, {
+            method: 'POST', credentials: 'include', headers, body: JSON.stringify({ context: cfg.get('INNERTUBE_CONTEXT') }) });
+          const json = await res.json();
+          const header = find(json, 'activeAccountHeaderRenderer');
+          if (!header) return;
+          const thumbs = (header.accountPhoto && header.accountPhoto.thumbnails) || [];
+          accountDone = true;
+          post('account', { signedIn: true, name: text(header.accountName), handle: text(header.channelHandle),
+                            photo: thumbs.length ? thumbs[thumbs.length - 1].url : '' });
+        } catch (e) {}
+      };
+      setTimeout(fetchAccount, 1500);
+      setInterval(fetchAccount, 5000);
+      window.__encore.refreshAccount = () => { accountDone = false; accountTries = 0; fetchAccount(); };
     })();
     """#
 
@@ -245,6 +281,7 @@ enum Scripts {
           url: location.href,
           isWatch: !!id,
           error,
+          quality: call('getPlaybackQuality') || '',
         };
       };
 
@@ -261,30 +298,51 @@ enum Scripts {
       };
 
       // ---------- Quality ----------
+      // Highest resolution (and with it YouTube's best audio stream) by default.
+      const ORDER = ['tiny', 'small', 'medium', 'large', 'hd720', 'hd1080', 'hd1440', 'hd2160', 'highres'];
       const applyQuality = () => {
-        const q = settings.quality;
-        if (!q || q === 'auto') { call('setPlaybackQualityRange', 'auto', 'auto'); return; }
-        const levels = call('getAvailableQualityLevels') || [];
-        let target = q;
-        if (levels.length && levels.indexOf(q) === -1) {
-          // pick the closest available level, preferring lower ones
-          const order = ['tiny', 'small', 'medium', 'large', 'hd720', 'hd1080', 'hd1440', 'hd2160', 'highres'];
-          const want = order.indexOf(q);
-          const avail = levels.filter(l => order.indexOf(l) !== -1).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-          target = avail.reduce((best, l) => (order.indexOf(l) <= want ? l : best), avail[0] || q);
+        const q = settings.quality || 'best';
+        const levels = (call('getAvailableQualityLevels') || []).filter(l => ORDER.indexOf(l) !== -1)
+          .sort((a, b) => ORDER.indexOf(b) - ORDER.indexOf(a));   // best first
+        if (!levels.length) return false;
+        let target = levels[0];
+        if (q !== 'best' && q !== 'auto') {
+          const want = ORDER.indexOf(q);
+          target = levels.find(l => ORDER.indexOf(l) <= want) || levels[levels.length - 1];
         }
         call('setPlaybackQualityRange', target, target);
         call('setPlaybackQuality', target);
+        return true;
+      };
+      // YouTube resets quality per video and after ads; re-apply a few times.
+      let qualityTimers = [];
+      const scheduleQuality = () => {
+        qualityTimers.forEach(clearTimeout);
+        qualityTimers = [300, 1500, 4000, 9000].map(ms => setTimeout(applyQuality, ms));
       };
 
       // ---------- Cinema layout ----------
+      // Cinema: only the player is visible and it fills the view. Everything
+      // else is made invisible (not removed), so YouTube's own layout code keeps
+      // working and nothing can ever draw on top of the video.
       const cinemaCSS = `
+        /* Encore provides search and navigation, so YouTube's header and guide are never needed here. */
+        #masthead-container, ytd-masthead, tp-yt-app-drawer#guide, ytd-mini-guide-renderer { display: none !important; }
+        ytd-app { --ytd-masthead-height: 0px !important; }
+        ytd-page-manager, #page-manager.ytd-app { margin-top: 0 !important; margin-left: 0 !important; }
+
         html.encore-cinema, html.encore-cinema body { overflow: hidden !important; background: #000 !important; }
+        html.encore-cinema body *:not(#movie_player):not(#movie_player *):not(ytd-popup-container):not(ytd-popup-container *):not(tp-yt-iron-overlay-backdrop) {
+          visibility: hidden !important; }
         html.encore-cinema #movie_player {
+          visibility: visible !important;
           position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important;
-          max-height: none !important; z-index: 2147483000 !important; background: #000 !important; }
-        html.encore-cinema #masthead-container, html.encore-cinema ytd-masthead,
-        html.encore-cinema tp-yt-app-drawer#guide { visibility: hidden !important; }
+          max-width: none !important; max-height: none !important; min-height: 0 !important;
+          z-index: 2147483000 !important; background: #000 !important; border-radius: 0 !important; }
+        html.encore-cinema #movie_player .html5-video-container { width: 100% !important; height: 100% !important; }
+        html.encore-cinema #movie_player video.html5-main-video {
+          width: 100% !important; height: 100% !important; left: 0 !important; top: 0 !important;
+          object-fit: contain !important; }
         html.encore-cinema .ytp-miniplayer-button, html.encore-cinema .ytp-size-button { display: none !important; }
         html.encore-hide-player #movie_player video { visibility: hidden !important; }
       `;
@@ -297,8 +355,13 @@ enum Scripts {
       };
       const applyCinema = () => {
         addCinemaStyle();
+        const was = document.documentElement.classList.contains('encore-cinema');
         document.documentElement.classList.toggle('encore-cinema', !!settings.cinema);
+        if (was && !settings.cinema) window.scrollTo(0, 0);
+        // YouTube sizes the player from resize events; nudge it twice so the
+        // controls and video settle at the new size.
         window.dispatchEvent(new Event('resize'));
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 250);
       };
       if (document.documentElement) applyCinema();
       document.addEventListener('DOMContentLoaded', applyCinema);
@@ -306,6 +369,7 @@ enum Scripts {
       // ---------- Video element wiring ----------
       let wired = null;
       let lastVideoId = '';
+      let lastAd = false;
       const onEvent = () => pushState(true);
       const wire = () => {
         const v = video();
@@ -317,9 +381,8 @@ enum Scripts {
           .forEach(n => v.addEventListener(n, onEvent));
         v.addEventListener('playing', () => {
           if (holdAutoplay) { holdAutoplay = false; try { v.pause(); } catch (e) {} }
-          viz.resume();
         });
-        v.addEventListener('loadeddata', applyQuality);
+        v.addEventListener('loadeddata', scheduleQuality);
       };
 
       // Periodic housekeeping: rewire, ads, "still watching?", state heartbeat.
@@ -328,10 +391,12 @@ enum Scripts {
         const s = snapshot();
         if (s.videoId && s.videoId !== lastVideoId) {
           lastVideoId = s.videoId;
-          applyQuality();
+          scheduleQuality();
           applyCinema();
           pushState(true);
         }
+        if (lastAd && !s.isAd) scheduleQuality();
+        lastAd = s.isAd;
         if (settings.autoSkipAds && s.isAd) {
           const skip = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button');
           if (skip) skip.click();
@@ -346,79 +411,10 @@ enum Scripts {
         pushState(false);
       }, 500);
 
-      // ---------- Visualiser (Web Audio analyser) ----------
-      const viz = {
-        active: false, bands: 56, ctx: null, analyser: null, el: null, freq: null, time: null, timer: null, warned: false,
-        resume() { if (this.ctx && this.ctx.state !== 'running') { this.ctx.resume().catch(() => {}); } },
-        graph() {
-          const v = video();
-          if (!v) return false;
-          if (this.el === v && this.analyser) return true;
-          // Only hook MediaSource (blob:) playback. Cross-origin progressive/HLS
-          // media is "tainted" and would be silenced by Web Audio.
-          const src = v.currentSrc || v.src || '';
-          if (!src.startsWith('blob:')) return false;
-          try {
-            const AC = window.AudioContext || window.webkitAudioContext;
-            if (!AC) return false;
-            if (!this.ctx) {
-              this.ctx = new AC({ latencyHint: 'playback' });
-              this.ctx.onstatechange = () => { if (this.ctx.state !== 'running' && wired && !wired.paused) this.resume(); };
-            }
-            if (this.ctx.state !== 'running') { this.resume(); return false; }
-            const source = this.ctx.createMediaElementSource(v);
-            const an = this.ctx.createAnalyser();
-            an.fftSize = 4096;
-            an.smoothingTimeConstant = 0.6;
-            an.minDecibels = -92;
-            an.maxDecibels = -18;
-            source.connect(an);
-            an.connect(this.ctx.destination);
-            this.analyser = an;
-            this.el = v;
-            this.freq = new Uint8Array(an.frequencyBinCount);
-            this.time = new Uint8Array(an.fftSize);
-            post('vizStatus', { ok: true });
-            return true;
-          } catch (e) {
-            if (!this.warned) { this.warned = true; post('vizStatus', { ok: false, reason: String(e) }); }
-            return false;
-          }
-        },
-        frame() {
-          if (!this.graph()) return;
-          const an = this.analyser;
-          an.getByteFrequencyData(this.freq);
-          an.getByteTimeDomainData(this.time);
-          const n = this.bands, len = this.freq.length, nyq = this.ctx.sampleRate / 2;
-          const lo = 30, hi = 16000, out = new Array(n);
-          for (let i = 0; i < n; i++) {
-            const f0 = lo * Math.pow(hi / lo, i / n), f1 = lo * Math.pow(hi / lo, (i + 1) / n);
-            const b0 = Math.min(len - 1, Math.floor(f0 / nyq * len));
-            const b1 = Math.min(len, Math.max(b0 + 1, Math.ceil(f1 / nyq * len)));
-            let peak = 0, sum = 0;
-            for (let b = b0; b < b1; b++) { const x = this.freq[b]; sum += x; if (x > peak) peak = x; }
-            out[i] = Math.round(peak * 0.6 + (sum / (b1 - b0)) * 0.4);
-          }
-          let rms = 0;
-          for (let i = 0; i < this.time.length; i += 4) { const x = (this.time[i] - 128) / 128; rms += x * x; }
-          rms = Math.sqrt(rms / (this.time.length / 4));
-          post('viz', { b: out, l: Math.round(Math.min(1, rms * 2.2) * 255) });
-        },
-        setActive(on) {
-          this.active = !!on;
-          if (this.active && !this.timer) {
-            this.timer = setInterval(() => { if (wired && !wired.paused) this.frame(); }, 33);
-          } else if (!this.active && this.timer) {
-            clearInterval(this.timer); this.timer = null;
-          }
-        },
-      };
-
       // ---------- Command API (called from Swift) ----------
       window.__encore = {
         snapshot,
-        play() { holdAutoplay = false; viz.resume(); if (call('playVideo') === undefined) { const v = video(); v && v.play(); } pushState(true); },
+        play() { holdAutoplay = false; if (call('playVideo') === undefined) { const v = video(); v && v.play(); } pushState(true); },
         pause() { if (call('pauseVideo') === undefined) { const v = video(); v && v.pause(); } pushState(true); },
         seek(t) { if (isAd()) return; if (call('seekTo', t, true) === undefined) { const v = video(); if (v) v.currentTime = t; } setTimeout(() => pushState(true), 150); },
         seekBy(dt) { const v = video(); if (v) this.seek(Math.max(0, (v.currentTime || 0) + dt)); },
@@ -436,12 +432,12 @@ enum Scripts {
         setVolume(vol) { call('setVolume', Math.max(0, Math.min(100, vol))); if (vol > 0) call('unMute'); pushState(true); },
         setMuted(m) { m ? call('mute') : call('unMute'); pushState(true); },
         setRate(r) { const v = video(); if (call('setPlaybackRate', r) === undefined && v) v.playbackRate = r; },
-        setQuality(q) { settings.quality = q; applyQuality(); },
+        setQuality(q) { settings.quality = q; applyQuality(); scheduleQuality(); },
         setCinema(on) { settings.cinema = !!on; applyCinema(); },
         setHideVideo(on) { addCinemaStyle(); document.documentElement.classList.toggle('encore-hide-player', !!on); },
         setAutoSkipAds(on) { settings.autoSkipAds = !!on; },
         setDismissStillWatching(on) { settings.dismissStillWatching = !!on; },
-        setVisualizer(on) { viz.setActive(on); },
+        setVisualizer(on) {},
         forceState() { pushState(true); },
       };
 

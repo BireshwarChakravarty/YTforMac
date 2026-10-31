@@ -75,7 +75,9 @@ final class BrowserEngine: NSObject {
     private(set) var isLoading = false
     private(set) var pageTitle = ""
     private(set) var isSignedIn = false
-    private(set) var avatarURL: URL?
+    private(set) var avatarURL: URL? = UserDefaults.standard.string(forKey: "accountPhoto").flatMap(URL.init(string:))
+    private(set) var accountName: String = UserDefaults.standard.string(forKey: "accountName") ?? ""
+    private(set) var accountHandle: String = UserDefaults.standard.string(forKey: "accountHandle") ?? ""
 
     let webView: WKWebView
     @ObservationIgnored var onPlayRequest: (@MainActor (URL) -> Void)?
@@ -151,6 +153,11 @@ final class BrowserEngine: NSObject {
                 Task { @MainActor in
                     self?.isSignedIn = false
                     self?.avatarURL = nil
+                    self?.accountName = ""
+                    self?.accountHandle = ""
+                    UserDefaults.standard.removeObject(forKey: "accountName")
+                    UserDefaults.standard.removeObject(forKey: "accountHandle")
+                    UserDefaults.standard.removeObject(forKey: "accountPhoto")
                     self?.go(to: .home)
                 }
             }
@@ -201,11 +208,22 @@ final class BrowserEngine: NSObject {
         switch body["type"] as? String {
         case "play":
             if let s = body["url"] as? String, let url = URL(string: s) { requestPlay(url) }
-        case "avatar":
-            if let s = body["url"] as? String, let url = URL(string: s) {
-                avatarURL = url
-                isSignedIn = true
+        case "account":
+            let signedIn = body["signedIn"] as? Bool ?? false
+            isSignedIn = signedIn
+            if signedIn {
+                accountName = (body["name"] as? String) ?? ""
+                accountHandle = (body["handle"] as? String) ?? ""
+                if let photo = body["photo"] as? String, var url = URL(string: photo.hasPrefix("//") ? "https:" + photo : photo) {
+                    if url.scheme == nil, let fixed = URL(string: "https:" + photo) { url = fixed }
+                    avatarURL = url
+                }
+            } else {
+                accountName = ""; accountHandle = ""; avatarURL = nil
             }
+            UserDefaults.standard.set(accountName, forKey: "accountName")
+            UserDefaults.standard.set(accountHandle, forKey: "accountHandle")
+            UserDefaults.standard.set(avatarURL?.absoluteString, forKey: "accountPhoto")
         default:
             break
         }

@@ -34,16 +34,14 @@ struct VisualizerView: View {
     private func draw(_ ctx: inout GraphicsContext, size: CGSize, time t: Double) {
         let e = model.visualizer
         switch style {
-        case .halo, .voxels, .tide, .warp, .vortex, .contours:
+        case .aurora, .silk, .orb, .tide, .halo:
             // GPU styles fall back to Halo if Metal is unavailable.
             CanvasPainter.halo(&ctx, size: size, engine: e, state: state, artwork: model.player.artwork, time: t, compact: compact)
         case .spectrum:
             CanvasPainter.spectrum(&ctx, size: size, engine: e, state: state,
-                                   options: compact ? .init(count: 40, gap: 3, mini: true, peaks: false) : .init())
+                                   options: compact ? .init(count: 40, gap: 3, mini: true, peaks: false) : .init(count: 64, gap: 5, mirroredVertical: true))
         case .waves:
             CanvasPainter.waves(&ctx, size: size, engine: e, state: state, time: t)
-        case .nebula:
-            CanvasPainter.nebula(&ctx, size: size, engine: e, state: state)
         case .ridgeline:
             CanvasPainter.ridgeline(&ctx, size: size, engine: e, state: state)
         }

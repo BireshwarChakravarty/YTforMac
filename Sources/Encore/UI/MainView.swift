@@ -51,14 +51,8 @@ struct MainView: View {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             ModePicker().fixedSize()
-            if model.destination == .nowPlaying && model.settings.mode == .video && model.player.hasMedia {
-                Button {
-                    model.settings.cinemaLayout.toggle()
-                    model.player.applyCinema()
-                } label: {
-                    Image(systemName: model.settings.cinemaLayout ? "rectangle.inset.filled" : "rectangle.split.2x1")
-                }
-                .help(model.settings.cinemaLayout ? "Show the full YouTube page (comments, description)" : "Cinema: video fills the window")
+            if model.player.hasMedia {
+                QualityMenu()
             }
             Button { MiniPlayerController.shared.toggle() } label: { Image(systemName: "pip.enter") }
                 .help("Floating mini player")
@@ -91,9 +85,12 @@ struct ContentArea: View {
                 WebViewHost(webView: model.browser.webView)
                     .opacity(showBrowser ? 1 : 0)
                     .allowsHitTesting(showBrowser)
-                WebViewHost(webView: player.webView)
-                    .opacity(showVideo ? 1 : 0)
-                    .allowsHitTesting(showVideo)
+                VStack(spacing: 0) {
+                    WebViewHost(webView: player.webView)
+                    if showVideo { VideoDetailsBar() }
+                }
+                .opacity(showVideo ? 1 : 0)
+                .allowsHitTesting(showVideo)
                 if showBrowser && model.browser.isLoading {
                     LoadingBar().frame(maxHeight: .infinity, alignment: .top)
                 }
@@ -174,5 +171,73 @@ final class SearchSuggester {
             guard !Task.isCancelled else { return }
             self?.suggestions = Array(list.prefix(8))
         }
+    }
+}
+
+/// The bar under the video: a drop-down that reveals YouTube's description,
+/// comments and up-next list, plus the current stream quality.
+struct VideoDetailsBar: View {
+    @Environment(AppModel.self) private var model
+    @State private var hovering = false
+
+    var body: some View {
+        let expanded = !model.settings.cinemaLayout
+        let player = model.player
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { model.settings.cinemaLayout.toggle() }
+            model.player.applyCinema()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                Text(expanded ? "Hide details" : "Details, comments & up next")
+                    .font(Theme.Fonts.title(12.5))
+                Spacer()
+                if !player.currentQuality.isEmpty {
+                    Text(player.currentQuality)
+                        .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(.white.opacity(0.1)))
+                        .help("YouTube is streaming this quality")
+                }
+            }
+            .foregroundStyle(hovering ? Color.white : Theme.Palette.textSecondary)
+            .padding(.horizontal, 16)
+            .frame(height: 34)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.black)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.Palette.stroke).frame(height: 1) }
+        .onHover { hovering = $0 }
+        .help(expanded ? "Show only the video" : "Show the description, comments and up-next list under the video")
+    }
+}
+
+/// Toolbar drop-down for the streaming quality (for the current mode).
+struct QualityMenu: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let audio = model.settings.mode == .audio
+        let current = audio ? model.settings.audioModeQuality : model.settings.videoQuality
+        Menu {
+            Section(audio ? "Audio mode stream" : "Video quality") {
+                ForEach(VideoQuality.allCases) { q in
+                    Button {
+                        if audio { model.settings.audioModeQuality = q } else { model.settings.videoQuality = q }
+                        model.player.applyQuality()
+                    } label: {
+                        if q == current { Label(q.title, systemImage: "checkmark") } else { Text(q.title) }
+                    }
+                }
+            }
+        } label: {
+            Label(model.player.currentQuality.isEmpty ? "Quality" : model.player.currentQuality, systemImage: "sparkles.tv")
+                .labelStyle(.titleAndIcon)
+        }
+        .fixedSize()
+        .help("Streaming quality. \u{201C}Highest available\u{201D} is the default.")
     }
 }

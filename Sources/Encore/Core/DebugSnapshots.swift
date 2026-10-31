@@ -29,7 +29,7 @@ enum DebugSnapshots {
             log(model, "initial")
             await captureMain(dir, "1-audio-\(model.settings.visualizerStyle.rawValue)")
 
-            for style in [VisualizerStyle.halo, .tide, .warp, .vortex, .contours, .spectrum, .nebula] {
+            for style in [VisualizerStyle.silk, .orb, .tide, .halo, .spectrum, .waves, .ridgeline] {
                 model.settings.visualizerStyle = style
                 try? await Task.sleep(for: .seconds(3.5))
                 await captureMain(dir, "2-audio-\(style.rawValue)")
@@ -62,6 +62,24 @@ enum DebugSnapshots {
             try? await Task.sleep(for: .seconds(3))
             await capture(menu, dir, "6-menu-bar")
             menu.close()
+
+            // Audio-capture check: YouTube can't play on CI machines, so play a
+            // synthesized tone through WebKit and see whether the tap hears it.
+            if args.contains("--test-tone") {
+                model.visualizer.forceDemo = false
+                model.player.webView.loadHTMLString(testToneHTML, baseURL: URL(string: "https://www.youtube.com/"))
+                try? await Task.sleep(for: .seconds(3))
+                model.audioTap.setActive(true, playing: true)
+                for second in 1...8 {
+                    try? await Task.sleep(for: .seconds(1))
+                    model.visualizer.tick()
+                    let peak = model.visualizer.bands.max() ?? 0
+                    print("TAP t=\(second)s status=\(model.visualizer.audioStatus) live=\(model.visualizer.isLive) peakBand=\(String(format: "%.2f", peak))")
+                }
+                print("TAP processes: \(AudioTap.describeProcesses())")
+                print("TAP output device: \(AudioTap.defaultOutputUID() ?? "none")")
+                fflush(stdout)
+            }
 
             log(model, "done")
             print("SNAPSHOTS-DONE")
@@ -152,3 +170,23 @@ enum DebugSnapshots {
         fflush(stdout)
     }
 }
+
+/// A short looping synth pattern played with Web Audio inside WebKit.
+private let testToneHTML = """
+<html><body style="background:#000"><script>
+const ctx = new AudioContext();
+const out = ctx.createGain(); out.gain.value = 0.4; out.connect(ctx.destination);
+function note(f, t, d, type) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + d + 0.05);
+}
+let t0 = ctx.currentTime + 0.1;
+for (let i = 0; i < 64; i++) {
+  const t = t0 + i * 0.25;
+  note(55, t, 0.22, 'sine'); note(220 * (1 + (i % 4) / 4), t, 0.2, 'sawtooth'); note(1760, t + 0.125, 0.05, 'square');
+}
+ctx.resume();
+</script></body></html>
+"""

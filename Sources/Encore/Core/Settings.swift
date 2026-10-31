@@ -10,59 +10,52 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case halo, voxels, tide, warp, vortex, contours, spectrum, waves, nebula, ridgeline
+    case aurora, silk, orb, tide, halo, spectrum, waves, ridgeline
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .halo: return "Halo"
-        case .voxels: return "Voxels"
+        case .aurora: return "Aurora"
+        case .silk: return "Silk"
+        case .orb: return "Orb"
         case .tide: return "Tide"
-        case .warp: return "Warp"
-        case .vortex: return "Vortex"
-        case .contours: return "Contours"
+        case .halo: return "Halo"
         case .spectrum: return "Spectrum"
         case .waves: return "Waves"
-        case .nebula: return "Nebula"
         case .ridgeline: return "Ridgeline"
         }
     }
     var symbol: String {
         switch self {
+        case .aurora: return "sparkles"
+        case .silk: return "wind"
+        case .orb: return "circle.circle.fill"
+        case .tide: return "water.waves"
         case .halo: return "circle.dashed"
-        case .voxels: return "cube.fill"
-        case .tide: return "circle.grid.3x3.fill"
-        case .warp: return "scope"
-        case .vortex: return "tornado"
-        case .contours: return "map.fill"
-        case .spectrum: return "chart.bar.fill"
-        case .waves: return "water.waves"
-        case .nebula: return "sparkles"
+        case .spectrum: return "waveform"
+        case .waves: return "alternatingcurrent"
         case .ridgeline: return "mountain.2.fill"
         }
     }
     /// Short description shown in the picker.
     var caption: String {
         switch self {
-        case .halo: return "Artwork ringed by light"
-        case .voxels: return "3D block terrain"
-        case .tide: return "Holographic point sea"
-        case .warp: return "Light-speed tunnel"
-        case .vortex: return "Storm with a calm eye"
-        case .contours: return "Living topographic map"
-        case .spectrum: return "Glowing mirrored bars"
-        case .waves: return "Aurora ribbons"
-        case .nebula: return "Particle burst"
-        case .ridgeline: return "Scrolling sound ridges"
+        case .aurora: return "Northern lights that rise with the music"
+        case .silk: return "Slow, flowing colour"
+        case .orb: return "A glass sphere that breathes"
+        case .tide: return "A calm sea of light"
+        case .halo: return "Artwork in soft, glowing rings"
+        case .spectrum: return "A smooth, mirrored waveform"
+        case .waves: return "Gentle ribbons of light"
+        case .ridgeline: return "Sound drawn as distant hills"
         }
     }
     /// GPU scenes are rendered with Metal; the rest use SwiftUI Canvas.
     var metalScene: MetalScene? {
         switch self {
-        case .voxels: return .voxels
+        case .aurora: return .aurora
+        case .silk: return .silk
+        case .orb: return .orb
         case .tide: return .tide
-        case .warp: return .warp
-        case .vortex: return .vortex
-        case .contours: return .contours
         default: return nil
         }
     }
@@ -74,11 +67,11 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VideoQuality: String, CaseIterable, Identifiable, Codable {
-    case auto, hd2160, hd1440, hd1080, hd720, large, medium, small, tiny
+    case best, hd2160, hd1440, hd1080, hd720, large, medium, small, tiny
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .auto: return "Auto"
+        case .best: return "Highest available"
         case .hd2160: return "2160p (4K)"
         case .hd1440: return "1440p"
         case .hd1080: return "1080p"
@@ -86,7 +79,23 @@ enum VideoQuality: String, CaseIterable, Identifiable, Codable {
         case .large: return "480p"
         case .medium: return "360p"
         case .small: return "240p"
-        case .tiny: return "144p"
+        case .tiny: return "144p (data saver)"
+        }
+    }
+
+    /// Short label for a quality level reported by YouTube's player.
+    static func label(forYouTubeLevel level: String) -> String {
+        switch level {
+        case "highres": return "8K"
+        case "hd2160": return "4K"
+        case "hd1440": return "1440p"
+        case "hd1080": return "1080p"
+        case "hd720": return "720p"
+        case "large": return "480p"
+        case "medium": return "360p"
+        case "small": return "240p"
+        case "tiny": return "144p"
+        default: return ""
         }
     }
 }
@@ -114,8 +123,8 @@ final class AppSettings {
     var visualizerColors: VisualizerColorSource { didSet { save(visualizerColors.rawValue, "visualizerColors") } }
     var visualizerSensitivity: Double { didSet { save(visualizerSensitivity, "visualizerSensitivity") } }
     var visualizerUsesAudio: Bool { didSet { save(visualizerUsesAudio, "visualizerUsesAudio") } }
-    var videoQuality: VideoQuality { didSet { save(videoQuality.rawValue, "videoQuality") } }
-    var audioModeQuality: VideoQuality { didSet { save(audioModeQuality.rawValue, "audioModeQuality") } }
+    var videoQuality: VideoQuality { didSet { save(videoQuality.rawValue, "videoQualityV2") } }
+    var audioModeQuality: VideoQuality { didSet { save(audioModeQuality.rawValue, "audioModeQualityV2") } }
     var cinemaLayout: Bool { didSet { save(cinemaLayout, "cinemaLayout") } }
     var cleanYouTubeChrome: Bool { didSet { save(cleanYouTubeChrome, "cleanYouTubeChrome") } }
     var autoSkipAds: Bool { didSet { save(autoSkipAds, "autoSkipAds") } }
@@ -143,12 +152,13 @@ final class AppSettings {
             defaults.object(forKey: key) == nil ? fallback : defaults.double(forKey: key)
         }
         mode = string("mode", PlaybackMode.video)
-        visualizerStyle = string("visualizerStyle", VisualizerStyle.halo)
+        visualizerStyle = string("visualizerStyle", VisualizerStyle.aurora)
         visualizerColors = string("visualizerColors", VisualizerColorSource.artwork)
         visualizerSensitivity = double("visualizerSensitivity", 1.0)
         visualizerUsesAudio = bool("visualizerUsesAudio", true)
-        videoQuality = string("videoQuality", VideoQuality.auto)
-        audioModeQuality = string("audioModeQuality", VideoQuality.tiny)
+        // V2 keys: earlier builds defaulted audio mode to a 144p data saver.
+        videoQuality = string("videoQualityV2", VideoQuality.best)
+        audioModeQuality = string("audioModeQualityV2", VideoQuality.best)
         cinemaLayout = bool("cinemaLayout", true)
         cleanYouTubeChrome = bool("cleanYouTubeChrome", true)
         autoSkipAds = bool("autoSkipAds", true)

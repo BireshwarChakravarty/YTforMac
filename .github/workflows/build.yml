@@ -53,23 +53,28 @@ jobs:
             dist/Encore.dmg
           if-no-files-found: error
 
-      - name: Smoke test (launch, play, capture Encore's windows)
-        timeout-minutes: 8
+      - name: Smoke test (launch, play, capture Encore's windows, check audio capture)
+        timeout-minutes: 10
         run: |
           set +e
           SHOTS="$PWD/dist/screens"; mkdir -p "$SHOTS"
           VIDEO="https://www.youtube.com/watch?v=aqz-KE-bpKQ"   # Big Buck Bunny (Blender Foundation, CC BY 3.0)
-          "$PWD/dist/Encore.app/Contents/MacOS/Encore" --play "$VIDEO" --mode audio --visualizer voxels \
-              --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals > "$SHOTS/run.log" 2>&1 &
-          PID=$!
-          for i in $(seq 1 150); do
-            grep -q SNAPSHOTS-DONE "$SHOTS/run.log" && break
-            kill -0 $PID 2>/dev/null || { echo "❌ Encore exited early"; break; }
+          # Best effort: pre-approve "System Audio Recording" for Encore so the tap check can run unattended.
+          NOW=$(date +%s)
+          for DB in "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "/Library/Application Support/com.apple.TCC/TCC.db"; do
+            sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, indirect_object_code_identity, flags, last_modified) VALUES ('kTCCServiceAudioCapture','app.encore.player',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$NOW);" 2>&1 | head -2
+          done
+          system_profiler SPAudioDataType 2>/dev/null | head -20
+          open --stdout "$SHOTS/run.log" --stderr "$SHOTS/run.log" -a "$PWD/dist/Encore.app" --args \
+              --play "$VIDEO" --mode audio --visualizer aurora --snapshot "$SHOTS" --snapshot-wait 25 --demo-visuals --test-tone
+          for i in $(seq 1 200); do
+            grep -q SNAPSHOTS-DONE "$SHOTS/run.log" 2>/dev/null && break
+            pgrep -x Encore >/dev/null || { echo "❌ Encore exited early"; break; }
             sleep 2
           done
-          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|rror" "$SHOTS/run.log" | head -80
-          kill -0 $PID 2>/dev/null && echo "✅ Encore still running" 
-          kill $PID 2>/dev/null; sleep 1; kill -9 $PID 2>/dev/null
+          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|TAP|rror" "$SHOTS/run.log" | head -100
+          pgrep -x Encore >/dev/null && echo "✅ Encore still running"
+          pkill -x Encore; sleep 1; pkill -9 -x Encore
           for f in "$SHOTS"/*.png; do
             [ -f "$f" ] || continue
             n=$(basename "$f" .png)

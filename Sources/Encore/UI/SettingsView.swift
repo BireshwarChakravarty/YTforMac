@@ -49,11 +49,11 @@ private struct PlaybackSettings: View {
                 ForEach(VideoQuality.allCases) { Text($0.title).tag($0) }
             }
             .onChange(of: settings.videoQuality) { _, _ in model.player.applyQuality() }
-            Picker("Audio mode streams video at", selection: $settings.audioModeQuality) {
+            Picker("Audio mode stream", selection: $settings.audioModeQuality) {
                 ForEach(VideoQuality.allCases) { Text($0.title).tag($0) }
             }
             .onChange(of: settings.audioModeQuality) { _, _ in model.player.applyQuality() }
-            Text("YouTube serves full-quality audio at any video resolution, so a low setting saves data without changing the sound.")
+            Text("\u{201C}Highest available\u{201D} asks YouTube for its best video stream, which also brings its best audio. Pick 144p in audio mode only if you need to save data.")
                 .font(.callout).foregroundStyle(.secondary)
             Toggle("Cinema layout (the video fills the window)", isOn: $settings.cinemaLayout)
                 .onChange(of: settings.cinemaLayout) { _, _ in model.player.applyCinema() }
@@ -91,10 +91,11 @@ private struct VisualizerSettings: View {
                     .frame(width: 220)
             }
             .onChange(of: settings.visualizerSensitivity) { _, v in model.visualizer.sensitivity = Float(v) }
-            Toggle("React to the actual audio (Web Audio analyser)", isOn: $settings.visualizerUsesAudio)
-                .onChange(of: settings.visualizerUsesAudio) { _, _ in model.player.refreshVisualizerSource() }
-            Text("When this is off, or for live streams, the visualisers follow a tempo-matched simulation. The live analyser takes effect from the next video you play.")
+            Toggle("React to the actual audio", isOn: $settings.visualizerUsesAudio)
+                .onChange(of: settings.visualizerUsesAudio) { _, _ in model.refreshAudioCapture() }
+            Text("Encore listens only to its own playback (macOS asks once for \u{201C}System Audio Recording\u{201D} permission). Nothing is recorded or saved. When this is off, the visualisers follow a gentle simulation.")
                 .font(.callout).foregroundStyle(.secondary)
+            Button("Open Audio Recording Privacy Settings…") { AudioTap.openPrivacySettings() }
         }
         .formStyle(.grouped)
     }

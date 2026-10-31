@@ -30,6 +30,8 @@ final class PlayerEngine: NSObject {
     private(set) var palette: ArtworkPalette = .brand
     /// A playability problem reported by YouTube (sign-in wall, unavailable video…).
     private(set) var playerError: String?
+    /// The quality YouTube is currently streaming, e.g. "1080p" or "4K".
+    private(set) var currentQuality: String = ""
 
     /// Position anchor used to interpolate a smooth playhead between updates.
     private(set) var anchorTime: Double = 0
@@ -49,7 +51,8 @@ final class PlayerEngine: NSObject {
     let webView: WKWebView
     @ObservationIgnored var onBrowseRequest: (@MainActor (URL) -> Void)?
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
-    @ObservationIgnored var onVisualizerFrame: (@MainActor ([UInt8], UInt8) -> Void)?
+    /// Called when the number of on-screen visualisers changes between zero and non-zero.
+    @ObservationIgnored var onVisualizerDemand: (@MainActor (Bool) -> Void)?
     private let settings: AppSettings
     @ObservationIgnored private var lastTransport: (kind: String, at: Date) = ("", .distantPast)
     @ObservationIgnored private var artworkTask: Task<Void, Never>?
@@ -244,8 +247,7 @@ final class PlayerEngine: NSObject {
     }
 
     private func syncVisualizer() {
-        let on = visualizerDemand > 0 && settings.visualizerUsesAudio
-        run("window.__encore && window.__encore.setVisualizer(\(on))")
+        onVisualizerDemand?(visualizerDemand > 0)
     }
 
     func refreshVisualizerSource() { syncVisualizer() }
@@ -261,11 +263,6 @@ final class PlayerEngine: NSObject {
         switch type {
         case "state":
             apply(state: body)
-        case "viz":
-            if let bands = body["b"] as? [NSNumber] {
-                let level = (body["l"] as? NSNumber)?.uint8Value ?? 0
-                onVisualizerFrame?(bands.map { $0.uint8Value }, level)
-            }
         case "remote":
             if let name = body["command"] as? String, let command = RemoteCommand(name: name) {
                 handleRemote(command)
@@ -289,6 +286,8 @@ final class PlayerEngine: NSObject {
 
         let newTitle = (s["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !newTitle.isEmpty, newTitle != "YouTube", !newTitle.hasPrefix("- "), newTitle != title { title = newTitle }
+        let q = VideoQuality.label(forYouTubeLevel: s["quality"] as? String ?? "")
+        if q != currentQuality { currentQuality = q }
         let err = (s["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         if err != playerError { playerError = err }
         let newAuthor = s["author"] as? String ?? ""
