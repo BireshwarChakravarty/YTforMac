@@ -36,7 +36,7 @@ The most thoughtful native client, though it covers YouTube Music only and needs
 
 ### VoxelWall (visual inspiration)
 - These are music-reactive live wallpapers for Mac, built as real-time 3D scenes: extruded voxel terrain, point-cloud "cloth" seas, warp tunnels, vortex storms and topographic contours.
-- Encore's GPU scenes (Voxels, Tide, Warp, Vortex, Contours) are original shaders written in that spirit.
+- Encore's GPU scenes (Aurora, Silk, Orb, Tide) are original shaders. They take the idea of music-reactive scenes and aim for something calmer.
 
 ## What Encore takes and adds
 
@@ -48,7 +48,7 @@ The most thoughtful native client, though it covers YouTube Music only and needs
 | Safari UA | Kaset | The version suffix matches the running macOS |
 | Visibility spoof | common wrappers | No throttling or "paused" dialogs while hidden; `inactiveSchedulingPolicy = .none` |
 | Ad skip, still-watching | Pear | It clicks YouTube's own Skip button and confirm dialog |
-| Visualiser | Pear, VoxelWall | Ten styles fed by a Web Audio analyser, which needs no extra permission, with a synthetic fallback |
+| Visualiser | Pear, VoxelWall, Kaset (audio tap) | Eight calm styles fed by a Core Audio tap on Encore's own WebKit audio (Web Audio returns silence for YouTube in WebKit), with a gentle simulation as fallback |
 | Mini player / PiP | Clicker | A floating panel that adopts the live player view |
 | Two web views | new | Browsing never interrupts playback |
-| Audio mode data saver | new | 144p video stream; YouTube's audio quality is independent of video resolution |
+| Audio mode | new | The video is hidden while the stream stays at the highest quality for the best audio; a 144p data saver is optional |

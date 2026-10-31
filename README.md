@@ -2,19 +2,20 @@
 
 <h1 align="center">Encore</h1>
 <p align="center"><b>A native YouTube player for macOS.</b><br>
-Media keys always work, even with every window closed. Video and audio modes, ten live visualisers, a menu bar player and a floating mini player.</p>
+Media keys always work, even with every window closed. Video and audio modes at the highest quality YouTube offers, eight calm visualisers that move with the music, a menu bar player and a floating mini player.</p>
 
 ---
 
 <p align="center">
-  <img src="docs/screenshots/audio-voxels.jpg" width="49%" alt="Audio mode with the Voxels visualiser">
-  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Audio mode with the Halo visualiser">
+  <img src="docs/screenshots/audio-aurora.jpg" width="49%" alt="Audio mode with the Aurora visualiser">
+  <img src="docs/screenshots/audio-silk.jpg" width="49%" alt="Audio mode with the Silk visualiser">
+  <img src="docs/screenshots/audio-orb.jpg" width="49%" alt="Audio mode with the Orb visualiser">
   <img src="docs/screenshots/audio-tide.jpg" width="49%" alt="Audio mode with the Tide visualiser">
-  <img src="docs/screenshots/audio-vortex.jpg" width="49%" alt="Audio mode with the Vortex visualiser">
 </p>
 <p align="center">
-  <img src="docs/screenshots/audio-warp.jpg" width="49%" alt="Audio mode with the Warp visualiser">
-  <img src="docs/screenshots/audio-contours.jpg" width="49%" alt="Audio mode with the Contours visualiser">
+  <img src="docs/screenshots/audio-halo.jpg" width="49%" alt="Audio mode with the Halo visualiser">
+  <img src="docs/screenshots/audio-spectrum.jpg" width="49%" alt="Audio mode with the Spectrum visualiser">
+  <img src="docs/screenshots/video-mode.jpg" width="49%" alt="Video mode with the details drop-down">
 </p>
 <p align="center"><img src="docs/screenshots/menu-bar.jpg" width="300" alt="Menu bar player"></p>
 <p align="center"><sub>Real captures of Encore on macOS 26. They were taken by the CI smoke test on a small virtual display, with the visualisers in demo mode, because YouTube won't stream to datacenter machines. Colours come from the video's artwork.</sub></p>
@@ -34,8 +35,8 @@ Encore fixes that:
 | | |
 |---|---|
 | **Video mode** | The video fills the window (cinema layout). Toggle back to the full YouTube page for comments and descriptions. |
-| **Audio mode** | Hides the video and asks YouTube for 144p (configurable) to save data. Audio quality stays the same. The screen shows a full-bleed visualiser over a blurred backdrop taken from the video's artwork. |
-| **10 visualisers** | **3D (Metal):** Voxels, Tide, Warp, Vortex, Contours. **2D (SwiftUI Canvas):** Halo, Spectrum, Waves, Nebula, Ridgeline. All of them react to a live frequency analysis of the audio and take their colours from the artwork. |
+| **Audio mode** | Hides the video and keeps streaming at the highest quality YouTube offers, which brings its best audio too. A 144p data saver is available if you want it. The screen shows a full-bleed visualiser over a blurred backdrop taken from the video's artwork. |
+| **8 visualisers** | **GPU (Metal):** Aurora, Silk, Orb, Tide. **2D (SwiftUI Canvas):** Halo, Spectrum, Waves, Ridgeline. All of them follow a live frequency analysis of the sound Encore is playing, take their colours from the artwork, and move calmly. A badge shows **Live audio** or **Simulated**. |
 | **Menu bar player** | Artwork, a live mini spectrum, scrubber, controls, the Video/Audio switch and volume. Optionally shows the track title in the menu bar. |
 | **Mini player** | A floating, always-on-top panel (⇧⌘P). It shows the video in video mode and the visualiser in audio mode. |
 | **Your YouTube** | Sign in once to get your home feed, subscriptions, history, Watch Later, liked videos and playlists. Native search with suggestions. You can paste any YouTube link. |
@@ -100,7 +101,7 @@ To work on it in Xcode, open `Package.swift`.
 │  BrowserEngine (WKWebView)        PlayerEngine (WKWebView)   │
 │  feeds, search, channels  ──play─▶  one long-lived player     │
 │  never plays media                   JS bridge ⇄ Swift state  │
-│                                      Web Audio analyser ──┐   │
+│  AudioTap (Core Audio tap on Encore's WebKit audio) ─┐   │
 │  NowPlayingCenter ◀── state ──────────────┘               │   │
 │  MPRemoteCommandCenter / MPNowPlayingInfoCenter            │   │
 │                                                            ▼   │
@@ -112,9 +113,9 @@ To work on it in Xcode, open `Package.swift`.
 - **`Core/Scripts.swift`** holds the injected JavaScript. It:
   - keeps the page "visible" so YouTube never throttles it;
   - takes over `navigator.mediaSession` so each key press acts exactly once;
-  - streams log-spaced spectrum bands from a Web Audio `AnalyserNode` (MediaSource playback only, so the audio is never muted);
   - applies quality, cinema layout and ad skipping;
   - in the browser view, blocks playback and forwards video clicks to the player.
+- **`Core/AudioTap.swift`** listens to the sound Encore plays. WebKit plays YouTube's audio in a helper process, and its Web Audio API returns silence for YouTube streams, so Encore uses a Core Audio process tap (macOS 14.2+) on its own WebKit helper and analyses it with an Accelerate FFT. macOS asks once for "System Audio Recording" permission. The tap only listens, and nothing is recorded or saved.
 - **`Core/NowPlayingCenter.swift`** handles media keys, the Now Playing widget and App Nap prevention while playing.
 - **`Core/WebKitFactory.swift`** sets up the shared cookie store, a Safari user agent that matches the running OS, and `inactiveSchedulingPolicy = .none`. Its `WebViewParking` keeps detached web views alive in an invisible window, so playback survives window closes.
 - **`UI/Visualizers/`** contains the Canvas painters (2D), the Metal scenes (runtime-compiled MSL, with no `.metallib` needed) and the shared `VisualizerEngine`. When the analyser is unavailable (live streams), a tempo-locked simulation keeps the visualisers moving.

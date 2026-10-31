@@ -110,7 +110,7 @@ jobs:
             dist/Encore.zip
           body: |
             **Encore** is a native YouTube player for macOS. Media keys always work, even with every window closed.
-            It has video and audio modes, ten live visualisers (five of them 3D, rendered with Metal), a menu bar player and a floating mini player.
+            It has video and audio modes at the highest available quality, eight calm visualisers that move with the music (four rendered with Metal), a menu bar player and a floating mini player.
 
             ### Install
             1. Download **Encore.dmg** below, open it and drag Encore to Applications.
@@ -120,7 +120,9 @@ jobs:
                ```
             3. Sign in with the account button at the bottom of the sidebar to get your feed and subscriptions.
 
-            The badge next to the visualiser picker shows **Live audio** when the visualiser is reacting to the actual sound, and **Simulated** when it is following a tempo-matched simulation (live streams, paused, or the analyser turned off).
+            **Visualisers:** the first time one is on screen, macOS asks to let Encore use **System Audio Recording**. Encore only listens to its own playback so the visuals can follow the music, and nothing is recorded or saved. The badge next to the visualiser picker shows **Live audio** when it is following the real sound. If it says **Allow audio access**, click it to open the right System Settings page.
+
+            Playback always requests the highest quality YouTube offers. Use the **Quality** menu in the toolbar to change it.
 
             Universal build (Apple silicon and Intel). Requires macOS 14 or later; Liquid Glass styling appears on macOS 26 and later.
 
