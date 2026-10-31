@@ -29,18 +29,19 @@ struct ArtworkView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                LinearGradient(colors: model.player.palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .overlay(Image(systemName: "music.note").font(.system(size: 18, weight: .bold)).foregroundStyle(.white.opacity(0.8)))
+        Color.clear
+            .aspectRatio(square ? 1 : 16 / 9, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    LinearGradient(colors: model.player.palette.gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .overlay(Image(systemName: "music.note").font(.system(size: 18, weight: .bold)).foregroundStyle(.white.opacity(0.8)))
+                }
             }
-        }
-        .aspectRatio(square ? 1 : 16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(.white.opacity(0.08)))
     }
 }

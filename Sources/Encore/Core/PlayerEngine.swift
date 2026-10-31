@@ -28,6 +28,8 @@ final class PlayerEngine: NSObject {
     private(set) var currentURL: URL?
     private(set) var artwork: NSImage?
     private(set) var palette: ArtworkPalette = .brand
+    /// A playability problem reported by YouTube (sign-in wall, unavailable video…).
+    private(set) var playerError: String?
 
     /// Position anchor used to interpolate a smooth playhead between updates.
     private(set) var anchorTime: Double = 0
@@ -286,7 +288,9 @@ final class PlayerEngine: NSObject {
         if changed { videoId = newId }
 
         let newTitle = (s["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !newTitle.isEmpty, newTitle != "YouTube", newTitle != title { title = newTitle }
+        if !newTitle.isEmpty, newTitle != "YouTube", !newTitle.hasPrefix("- "), newTitle != title { title = newTitle }
+        let err = (s["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if err != playerError { playerError = err }
         let newAuthor = s["author"] as? String ?? ""
         if !newAuthor.isEmpty, newAuthor != author { author = newAuthor }
 

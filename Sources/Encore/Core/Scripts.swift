@@ -218,9 +218,18 @@ enum Scripts {
         const duration = v && isFinite(v.duration) ? v.duration : (call('getDuration') || 0);
         const volume = call('getVolume');
         const muted = call('isMuted');
+        // Playability problems (sign-in walls, region locks, removed videos).
+        let error = '';
+        const visible = (el) => el && el.offsetParent !== null && (el.innerText || '').trim().length > 0;
+        const errEl = document.querySelector('#movie_player .ytp-error');
+        if (visible(errEl)) error = errEl.innerText.trim().split('\n')[0];
+        if (!error) {
+          const wall = document.querySelector('yt-playability-error-supported-renderers');
+          if (visible(wall)) error = wall.innerText.trim().split('\n')[0];
+        }
         return {
           videoId: id,
-          title: d.title || meta.title || document.title.replace(/ - YouTube$/, ''),
+          title: d.title || meta.title || document.title.replace(/^\s*-\s*/, '').replace(/\s*-\s*YouTube$/, ''),
           author: d.author || meta.artist || '',
           isLive: !!(d.isLive || (v && v.duration === Infinity)),
           currentTime: v ? (v.currentTime || 0) : 0,
@@ -235,6 +244,7 @@ enum Scripts {
           playlistId: params.get('list') || '',
           url: location.href,
           isWatch: !!id,
+          error,
         };
       };
 
@@ -242,7 +252,7 @@ enum Scripts {
       let lastKey = '';
       const pushState = (force) => {
         const s = snapshot();
-        const key = [s.videoId, s.title, s.author, s.paused, s.isAd, s.rate, s.volume, s.muted, Math.round(s.duration)].join('|');
+        const key = [s.videoId, s.title, s.author, s.paused, s.isAd, s.rate, s.volume, s.muted, Math.round(s.duration), s.error].join('|');
         const now = Date.now();
         if (!force && key === lastKey && now - lastPost < 1000) return;
         lastKey = key;

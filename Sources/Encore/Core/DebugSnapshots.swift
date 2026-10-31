@@ -19,7 +19,10 @@ enum DebugSnapshots {
 
         Task { @MainActor in
             NSApp.activate(ignoringOtherApps: true)
+            try? await Task.sleep(for: .seconds(2))
+            fitMainWindow()
             try? await Task.sleep(for: .seconds(wait))
+            await logPage(model)
             log(model, "initial")
             await captureMain(dir, "1-audio-\(model.settings.visualizerStyle.rawValue)")
 
@@ -63,10 +66,30 @@ enum DebugSnapshots {
         }
     }
 
+    /// CI displays are small; a window larger than the screen cannot be captured.
+    private static func fitMainWindow() {
+        guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }),
+              let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let size = NSSize(width: min(1280, visible.width - 20), height: min(800, visible.height - 20))
+        window.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
+                               width: size.width, height: size.height), display: true)
+        print("WINDOW fitted to \(Int(size.width))x\(Int(size.height)) on screen \(Int(visible.width))x\(Int(visible.height))")
+    }
+
+    private static func logPage(_ model: AppModel) async {
+        let js = "JSON.stringify({url: location.href, player: !!document.getElementById('movie_player'), " +
+                 "video: !!document.querySelector('video'), src: (document.querySelector('video')||{}).currentSrc || '', " +
+                 "text: (document.body ? document.body.innerText : '').slice(0, 240)})"
+        let result = try? await model.player.webView.evaluateJavaScript(js)
+        print("PAGE \(result as? String ?? "n/a")")
+        fflush(stdout)
+    }
+
     private static func log(_ model: AppModel, _ label: String) {
         let p = model.player
         print("STATE[\(label)] videoId=\(p.videoId) title=\"\(p.title)\" author=\"\(p.author)\" playing=\(p.isPlaying) " +
-              "position=\(Int(p.position())) duration=\(Int(p.duration)) ad=\(p.isAd) artwork=\(p.artwork != nil) " +
+              "position=\(Int(p.position())) duration=\(Int(p.duration)) ad=\(p.isAd) artwork=\(p.artwork != nil) error=\(p.playerError ?? "none") " +
               "analyserLive=\(model.visualizer.isLive) mode=\(model.settings.mode.rawValue) metal=\(MetalContext.shared.library != nil) " +
               "metalError=\(MetalContext.shared.compileError ?? "none")")
         fflush(stdout)

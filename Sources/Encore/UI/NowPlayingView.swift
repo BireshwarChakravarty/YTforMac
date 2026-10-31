@@ -23,6 +23,11 @@ struct NowPlayingView: View {
                     )
                     .ignoresSafeArea()
 
+                if let error = player.playerError {
+                    PlayerProblemCard(message: error)
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+
                 VStack(spacing: 0) {
                     HStack(alignment: .top) {
                         VisualizerPicker()
@@ -291,5 +296,40 @@ struct UpNextChip: View {
             .padding(.vertical, 8)
             .encoreGlass(cornerRadius: 12)
         }
+    }
+}
+
+/// Shown in audio mode when YouTube refuses to play (sign-in wall, region lock,
+/// removed video), since the page itself is hidden.
+struct PlayerProblemCard: View {
+    let message: String
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.bubble.fill")
+                .font(.system(size: 30))
+                .foregroundStyle(Theme.signature)
+            Text("YouTube needs your attention")
+                .font(Theme.Fonts.display(20))
+            Text("\u{201C}\(message)\u{201D}")
+                .font(Theme.Fonts.body(14))
+                .foregroundStyle(Theme.Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            HStack(spacing: 10) {
+                Button { model.setMode(.video) } label: { Label("Show Video Page", systemImage: "play.rectangle") }
+                    .buttonStyle(GradientButtonStyle())
+                if !model.browser.isSignedIn {
+                    Button { model.destination = .home; model.browser.signIn() } label: { Label("Sign In", systemImage: "person.crop.circle") }
+                        .buttonStyle(.bordered).controlSize(.large)
+                }
+                Button { model.player.webView.reload() } label: { Label("Retry", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.bordered).controlSize(.large)
+            }
+        }
+        .padding(28)
+        .encoreGlass(cornerRadius: 22)
+        .shadow(color: .black.opacity(0.4), radius: 30, y: 10)
     }
 }
