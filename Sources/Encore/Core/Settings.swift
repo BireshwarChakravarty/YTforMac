@@ -10,63 +10,64 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case flow, swarm, ambient, halo, aurora, orb, tide, spectrum, waves, ridgeline
+    case flow, cosmos, aurora, ambient, drive, waves, halo, spectrum, orb, tide
     var id: String { rawValue }
     var title: String {
         switch self {
         case .flow: return "Flow"
-        case .swarm: return "Swarm"
-        case .ambient: return "Ambient"
-        case .halo: return "Halo"
+        case .cosmos: return "Cosmos"
         case .aurora: return "Aurora"
+        case .ambient: return "Ambient"
+        case .drive: return "Night Drive"
+        case .waves: return "Waves"
+        case .halo: return "Halo"
+        case .spectrum: return "Spectrum"
         case .orb: return "Orb"
         case .tide: return "Tide"
-        case .spectrum: return "Spectrum"
-        case .waves: return "Waves"
-        case .ridgeline: return "Ridgeline"
         }
     }
     var symbol: String {
         switch self {
         case .flow: return "tornado"
-        case .swarm: return "sparkles"
-        case .ambient: return "paintpalette.fill"
-        case .halo: return "circle.dashed"
+        case .cosmos: return "sparkles"
         case .aurora: return "moon.stars.fill"
+        case .ambient: return "paintpalette.fill"
+        case .drive: return "car.rear.fill"
+        case .waves: return "waveform.path"
+        case .halo: return "circle.dashed"
+        case .spectrum: return "waveform"
         case .orb: return "circle.circle.fill"
         case .tide: return "water.waves"
-        case .spectrum: return "waveform"
-        case .waves: return "alternatingcurrent"
-        case .ridgeline: return "mountain.2.fill"
         }
     }
     /// Short description shown in the picker.
     var caption: String {
         switch self {
         case .flow: return "Rivers of light from the spectrum"
-        case .swarm: return "Particles orbiting glowing cores"
-        case .ambient: return "The artwork as a living painting"
+        case .cosmos: return "A spiral galaxy in deep space"
+        case .aurora: return "Northern lights over a lake"
+        case .ambient: return "Your artwork, glowing and alive"
+        case .drive: return "A night drive with the radio on"
+        case .waves: return "Silk ribbons of light"
         case .halo: return "Artwork ringed by the spectrum"
-        case .aurora: return "Northern lights that rise with the music"
+        case .spectrum: return "A smooth, mirrored waveform"
         case .orb: return "A glass sphere that breathes"
         case .tide: return "A calm sea of light"
-        case .spectrum: return "A smooth, mirrored waveform"
-        case .waves: return "Gentle ribbons of light"
-        case .ridgeline: return "Sound drawn as distant hills"
         }
     }
-    /// GPU scenes run through the Metal pipeline (feedback, bloom, tonemapping);
-    /// the minimal ones use SwiftUI Canvas.
+    /// GPU scenes run through the Metal pipeline; Spectrum uses SwiftUI Canvas.
     var metalScene: MetalScene? {
         switch self {
         case .flow: return .flow
-        case .swarm: return .swarm
-        case .ambient: return .ambient
-        case .halo: return .halo
+        case .cosmos: return .cosmos
         case .aurora: return .aurora
+        case .ambient: return .ambient
+        case .drive: return .drive
+        case .waves: return .waves
+        case .halo: return .halo
         case .orb: return .orb
         case .tide: return .tide
-        default: return nil
+        case .spectrum: return nil
         }
     }
     var isGPU: Bool { metalScene != nil }

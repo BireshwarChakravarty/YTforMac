@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case swarm, flow, ambient, aurora, halo, orb, tide
+    case flow, cosmos, aurora, ambient, halo, waves, drive, orb, tide
 
     struct Config {
         var fragment: String?            // full-screen scene shader
@@ -19,24 +19,37 @@ enum MetalScene: String {
         var threshold: Float = 0.6
         var bloom: Float = 0.8
         var exposure: Float = 1
-        var usesArtwork = false
+    }
+
+    /// Render-resolution cap. Soft, volumetric scenes look identical at a lower
+    /// resolution and save a lot of GPU time.
+    var maxPixelWidth: CGFloat {
+        switch self {
+        case .aurora: return 1200
+        case .ambient, .orb: return 1600
+        default: return 2000
+        }
     }
 
     var config: Config {
         switch self {
-        case .swarm:
-            return Config(background: "swarmBackground", pointVertex: "swarmVertex", pointCount: 60_000,
-                          decay: 0.9, maxMode: 1, threshold: 0.7, bloom: 0.8, exposure: 1.1)
         case .flow:
             return Config(fragment: "flowFragment", decay: 0.965, zoom: 1.012, zoomBass: 0.018, rot: 0.0045, warp: 0.9,
                           threshold: 0.6, bloom: 0.9, exposure: 1.0)
-        case .ambient:
-            return Config(fragment: "ambientFragment", threshold: 0.9, bloom: 0.5, exposure: 1.15, usesArtwork: true)
+        case .cosmos:
+            return Config(background: "cosmosBackground", pointVertex: "cosmosVertex", pointCount: 90_000,
+                          decay: 0.55, maxMode: 1, threshold: 0.7, bloom: 0.9, exposure: 1.05)
         case .aurora:
-            return Config(fragment: "auroraFragment", threshold: 0.7, bloom: 0.7, exposure: 0.85)
+            return Config(fragment: "auroraFragment", threshold: 0.75, bloom: 0.7, exposure: 1.0)
+        case .ambient:
+            return Config(fragment: "ambientFragment", threshold: 1.1, bloom: 0.4, exposure: 1.0)
         case .halo:
             return Config(fragment: "haloFragment", decay: 0.9, zoom: 1.008, maxMode: 1,
-                          threshold: 0.55, bloom: 0.9, exposure: 1.05, usesArtwork: true)
+                          threshold: 0.55, bloom: 0.9, exposure: 1.05)
+        case .waves:
+            return Config(fragment: "wavesFragment", decay: 0.72, threshold: 0.6, bloom: 1.0, exposure: 1.0)
+        case .drive:
+            return Config(fragment: "driveFragment", threshold: 0.7, bloom: 0.9, exposure: 1.0)
         case .orb:
             return Config(fragment: "orbFragment", threshold: 0.85, bloom: 0.6, exposure: 0.9)
         case .tide:
