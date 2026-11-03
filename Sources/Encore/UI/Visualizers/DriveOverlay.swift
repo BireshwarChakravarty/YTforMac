@@ -33,8 +33,11 @@ private struct DriveHUD: View {
                 .overlay(content(ink: ink).opacity(0.12).offset(y: compact ? 1.5 : 3).blur(radius: 1))   // the faint double image of a real HUD
                 .shadow(color: Color(red: 0.3, green: 0.9, blue: 1.0).opacity(0.55), radius: compact ? 4 : 8)
                 .rotation3DEffect(.degrees(12), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
-                .blendMode(.screen)
-                .opacity(0.92)
+                // keeps the figures readable over bright neon
+                .background(
+                    Ellipse().fill(Color.black.opacity(0.32)).blur(radius: compact ? 14 : 28)
+                        .padding(compact ? -10 : -24)
+                )
         }
     }
 
