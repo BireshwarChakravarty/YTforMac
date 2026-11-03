@@ -69,6 +69,8 @@ final class LyricsService {
     private(set) var state: State = .idle
     /// True when the timings were estimated rather than published with the lyrics.
     private(set) var approximate = false
+    /// True once the lyrics have been re-timed against this video's captions.
+    private(set) var aligned = false
     /// The track the current state belongs to.
     private(set) var trackKey = ""
     /// User nudge for out-of-sync lyrics, in seconds (positive shows lines later).
@@ -87,6 +89,8 @@ final class LyricsService {
     @ObservationIgnored private(set) var demoStart: Date?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var cache: [String: (State, Bool)] = [:]
+    @ObservationIgnored private var alignTask: Task<Void, Never>?
+    @ObservationIgnored private var alignedCache: [String: [LyricLine]] = [:]
     @ObservationIgnored weak var player: PlayerEngine?
 
     /// Lyric time at `date`: the playhead, adjusted by the user's offset.
@@ -122,9 +126,15 @@ final class LyricsService {
         guard duration > 0 || pendingSince(videoId) > 3 else { return }
         trackKey = videoId
         offset = 0
+        alignTask?.cancel()
+        aligned = false
         if let cached = cache[videoId] {
             state = cached.0
             approximate = cached.1
+            if case .synced(_, let source) = cached.0, let lines = alignedCache[videoId] {
+                state = .synced(lines, source)
+                aligned = true
+            }
             return
         }
         state = .searching
@@ -179,6 +189,9 @@ final class LyricsService {
         cache[videoId] = (result, approximate)
         state = result
         self.approximate = approximate
+        if case .synced(_, let source) = result, source != .captions, source != .autoCaptions, source != .demo {
+            scheduleAlignment(videoId: videoId, reestimate: approximate)
+        }
         let summary: String
         switch result {
         case .synced(let l, let s): summary = "synced \(l.count) lines from \(s.rawValue)\(approximate ? " (estimated timing)" : "")"
@@ -190,7 +203,40 @@ final class LyricsService {
         print("LYRICS \(videoId): \(summary)")
     }
 
+    /// Re-times the lyrics to this video using its captions: hand-made ones
+    /// first, then auto-generated ones (which carry per-word timings).
+    private func scheduleAlignment(videoId: String, reestimate: Bool) {
+        alignTask?.cancel()
+        alignTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            for automatic in [false, true] {
+                guard let self, !Task.isCancelled, self.trackKey == videoId,
+                      case .synced(let lines, let source) = self.state else { return }
+                guard let words = await self.captionWords(videoId: videoId, automatic: automatic) else { continue }
+                guard let mapped = LyricsAligner.align(lines, to: words, reestimate: reestimate) else {
+                    print("LYRICS \(videoId): \(automatic ? "auto-" : "")captions didn't match the lyrics (\(words.count) words)")
+                    continue
+                }
+                guard self.trackKey == videoId, !Task.isCancelled else { return }
+                let shift = mapped.first.map { $0.start - lines[0].start } ?? 0
+                self.alignedCache[videoId] = mapped
+                self.state = .synced(mapped, source)
+                self.aligned = true
+                print("LYRICS \(videoId): aligned to \(automatic ? "auto-" : "")captions, first line moved \(String(format: "%+.1f", shift))s")
+                return
+            }
+        }
+    }
+
+    /// Makes `line` the one being sung right now (Option-click in Sing-Along).
+    func syncNow(to line: LyricLine) {
+        guard let player else { return }
+        offset = player.position() - line.start
+    }
+
     private func reset() {
+        alignTask?.cancel()
+        aligned = false
         task?.cancel()
         trackKey = ""
         state = .idle
@@ -284,6 +330,52 @@ final class LyricsService {
     /// to download captions directly, so when that fails Encore turns captions
     /// on (hidden) and captures the file the player itself downloads.
     private func captionLyrics(videoId: String, automatic: Bool) async -> [LyricLine]? {
+        guard let rows = await captionRows(videoId: videoId, automatic: automatic) else { return nil }
+        var cues: [(Double, Double, String)] = []
+        for row in rows {
+            let text = Self.cleanCaption(row.text)
+            guard !text.isEmpty else { continue }
+            cues.append((row.start, row.start + row.duration, text))
+        }
+        guard cues.count >= 3 else { return nil }
+        return LRC.lines(from: automatic ? LRC.mergeShortCues(cues) : cues)
+    }
+
+    private struct CaptionRow {
+        let start: Double
+        let duration: Double
+        let text: String
+        let segments: [(Double, String)]
+    }
+
+    private static func cleanCaption(_ s: String) -> String {
+        s.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\u{266A}", with: "")
+            .replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)   // [Music], [Applause]
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Caption words with their times in the video (per-word for auto-captions,
+    /// spread across each caption otherwise).
+    private func captionWords(videoId: String, automatic: Bool) async -> [LyricsAligner.Word]? {
+        guard let rows = await captionRows(videoId: videoId, automatic: automatic) else { return nil }
+        var words: [LyricsAligner.Word] = []
+        for (r, row) in rows.enumerated() {
+            let rowEnd = row.duration > 0 ? row.start + row.duration : (r + 1 < rows.count ? rows[r + 1].start : row.start + 3)
+            let segs = row.segments.isEmpty ? [(0.0, row.text)] : row.segments
+            for (k, seg) in segs.enumerated() {
+                let t0 = row.start + seg.0
+                let t1 = k + 1 < segs.count ? row.start + segs[k + 1].0 : rowEnd
+                let parts = Self.cleanCaption(seg.1).split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+                for (j, w) in parts.enumerated() {
+                    words.append(.init(time: t0 + (t1 - t0) * Double(j) / Double(max(parts.count, 1)), text: w))
+                }
+            }
+        }
+        return words.count >= 8 ? words : nil
+    }
+
+    private func captionRows(videoId: String, automatic: Bool) async -> [CaptionRow]? {
         guard let webView = player?.webView else { return nil }
         let js = """
         const p = document.getElementById('movie_player');
@@ -299,12 +391,14 @@ final class LyricsService {
           text = text.trim();
           if (text[0] === '{') {
             const j = JSON.parse(text);
-            return (j.events || []).filter(e => e.segs).map(e => [e.tStartMs / 1000, (e.dDurationMs || 0) / 1000, e.segs.map(s => s.utf8 || '').join('')]);
+            return (j.events || []).filter(e => e.segs).map(e => [e.tStartMs / 1000, (e.dDurationMs || 0) / 1000,
+              e.segs.map(s => s.utf8 || '').join(''), e.segs.map(s => [(s.tOffsetMs || 0) / 1000, s.utf8 || ''])]);
           }
           const doc = new DOMParser().parseFromString(text, 'text/xml');
           const ps = Array.from(doc.getElementsByTagName('p'));
-          if (ps.length) return ps.map(n => [(+n.getAttribute('t') || 0) / 1000, (+n.getAttribute('d') || 0) / 1000, n.textContent || '']);
-          return Array.from(doc.getElementsByTagName('text')).map(n => [+n.getAttribute('start') || 0, +n.getAttribute('dur') || 0, n.textContent || '']);
+          if (ps.length) return ps.map(n => [(+n.getAttribute('t') || 0) / 1000, (+n.getAttribute('d') || 0) / 1000, n.textContent || '',
+              Array.from(n.getElementsByTagName('s')).map(w => [(+w.getAttribute('t') || 0) / 1000, w.textContent || ''])]);
+          return Array.from(doc.getElementsByTagName('text')).map(n => [+n.getAttribute('start') || 0, +n.getAttribute('dur') || 0, n.textContent || '', []]);
         };
         let rows = null;
         try {
@@ -333,21 +427,19 @@ final class LyricsService {
         """
         do {
             let result = try await webView.callAsyncJavaScript(js, arguments: ["vid": videoId, "auto": automatic], in: nil, in: .page)
-            guard let rows = result as? [[Any]] else { return nil }
-            var cues: [(Double, Double, String)] = []
-            for row in rows where row.count == 3 {
-                let start = (row[0] as? NSNumber)?.doubleValue ?? 0
-                let dur = (row[1] as? NSNumber)?.doubleValue ?? 0
-                let text = (row[2] as? String ?? "")
-                    .replacingOccurrences(of: "\n", with: " ")
-                    .replacingOccurrences(of: "\u{266A}", with: "")
-                    .replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)   // [Music], [Applause]
-                    .trimmingCharacters(in: .whitespaces)
-                guard !text.isEmpty else { continue }
-                cues.append((start, start + dur, text))
+            guard let raw = result as? [[Any]] else { return nil }
+            let rows: [CaptionRow] = raw.compactMap { row in
+                guard row.count >= 3 else { return nil }
+                let segs = (row.count > 3 ? row[3] as? [[Any]] : nil) ?? []
+                return CaptionRow(start: (row[0] as? NSNumber)?.doubleValue ?? 0,
+                                  duration: (row[1] as? NSNumber)?.doubleValue ?? 0,
+                                  text: row[2] as? String ?? "",
+                                  segments: segs.compactMap { s in
+                                      guard s.count == 2 else { return nil }
+                                      return ((s[0] as? NSNumber)?.doubleValue ?? 0, s[1] as? String ?? "")
+                                  })
             }
-            guard cues.count >= 3 else { return nil }
-            return LRC.lines(from: automatic ? LRC.mergeShortCues(cues) : cues)
+            return rows.isEmpty ? nil : rows
         } catch {
             return nil
         }

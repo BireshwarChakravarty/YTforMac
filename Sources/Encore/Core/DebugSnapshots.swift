@@ -158,6 +158,24 @@ enum DebugSnapshots {
             let pick = r.timed.map { "\($0.source.rawValue) synced" } ?? r.plain.map { "\($0.source.rawValue) plain (estimated timing)" } ?? (r.instrumental ? "instrumental" : "none")
             print("LYRICSTEST \"\(q.artist)\" / \"\(q.track)\" -> \(pick)  [\(all)]")
         }
+        // Aligner: the demo lyrics against "captions" of the same words shifted by
+        // a 7.5 s intro, with some words missing.
+        let demo = LRC.parse(LyricsService.demoLRC)
+        var fake: [LyricsAligner.Word] = []
+        for (i, line) in demo.enumerated() where !line.text.isEmpty {
+            for (j, w) in line.words.enumerated() where (i + j) % 4 != 0 {
+                fake.append(.init(time: w.start + 7.5 + (j % 2 == 0 ? 0.2 : -0.15), text: w.text))
+            }
+        }
+        if let aligned = LyricsAligner.align(demo, to: fake, reestimate: false) {
+            let shifts = zip(aligned, demo).filter { !$0.1.text.isEmpty }.map { $0.0.start - $0.1.start }
+            print("LYRICSTEST aligner recovered shift \(String(format: "%.2f", shifts.sorted()[shifts.count / 2]))s (expected 7.5)")
+        } else {
+            print("LYRICSTEST aligner found no alignment")
+        }
+        let roman = "Hum tere bin ab reh nahi sakte".split(separator: " ").map { LyricsAligner.skeleton(String($0)) }
+        let deva = "\u{0939}\u{092E} \u{0924}\u{0947}\u{0930}\u{0947} \u{092C}\u{093F}\u{0928} \u{0905}\u{092C} \u{0930}\u{0939} \u{0928}\u{0939}\u{0940}\u{0902} \u{0938}\u{0915}\u{0924}\u{0947}".split(separator: " ").map { LyricsAligner.skeleton(String($0)) }
+        print("LYRICSTEST skeleton roman=\(roman) devanagari=\(deva) match=\(roman == deva)")
         let parsed = LRC.parse(LyricsService.demoLRC)
         print("LYRICSTEST demo parsed \(parsed.count) lines; words in line 1: \(parsed.first(where: { !$0.text.isEmpty })?.words.count ?? 0)")
         fflush(stdout)

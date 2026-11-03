@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The lyrics layer for the Lyric Pop and Sing-Along visualisers. It sits
@@ -214,7 +215,14 @@ struct SingAlongView: View {
                     ForEach(lines) { line in
                         SingAlongLine(line: line, distance: line.id - (index ?? -1), fontSize: fontSize)
                             .id(line.id)
-                            .onTapGesture { model.player.seek(to: line.start + model.lyrics.offset + 0.05) }
+                            .onTapGesture {
+                                // Option-click: "this line is being sung now" (fixes the sync by hand).
+                                if NSEvent.modifierFlags.contains(.option) {
+                                    model.lyrics.syncNow(to: line)
+                                } else {
+                                    model.player.seek(to: line.start + model.lyrics.offset + 0.05)
+                                }
+                            }
                     }
                     Color.clear.frame(height: height * 0.6)
                 }
@@ -403,7 +411,7 @@ struct LyricsInfoChip: View {
         if let source = lyrics.source {
             HStack(spacing: 6) {
                 Image(systemName: "quote.bubble.fill").foregroundStyle(model.player.palette.primary)
-                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)\(lyrics.approximate ? " \u{00B7} timing estimated" : "")")
+                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)\(lyrics.aligned ? " \u{00B7} synced to video" : lyrics.approximate ? " \u{00B7} timing estimated" : "")")
                     .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Palette.textSecondary)
                 Divider().frame(height: 12)
@@ -422,6 +430,16 @@ struct LyricsInfoChip: View {
             .padding(.vertical, 7)
             .background(Capsule().fill(.black.opacity(0.28)).overlay(Capsule().strokeBorder(Theme.Palette.stroke)))
             .fixedSize()
+            .contextMenu {
+                Button("Lyrics 2 s Earlier") { lyrics.offset -= 2 }
+                Button("Lyrics 2 s Later") { lyrics.offset += 2 }
+                Button("Lyrics 5 s Earlier") { lyrics.offset -= 5 }
+                Button("Lyrics 5 s Later") { lyrics.offset += 5 }
+                Divider()
+                Button("Reset Timing") { lyrics.offset = 0 }
+                Button("Search Lyrics Again") { lyrics.retry() }
+            }
+            .help("Lyrics timing: \u{2212}/+ nudge by a quarter second; right-click for bigger steps. In Sing-Along, Option-click the line being sung to sync it.")
         }
     }
 }
