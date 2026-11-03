@@ -36,13 +36,23 @@ struct LyricLine: Identifiable, Equatable {
 
 /// Where the lyrics came from (shown as a small credit).
 enum LyricsSource: String {
+    case youtubeMusic = "YouTube Music"
     case lrclib = "LRCLIB"
+    case netease = "NetEase"
     case captions = "YouTube captions"
+    case autoCaptions = "Auto-captions"
     case demo = "Demo"
 }
 
-/// Finds synced lyrics for whatever is playing: LRCLIB first (free, open,
-/// time-synced LRC), then the video's own captions as a fallback.
+/// Finds lyrics for whatever is playing. It asks several sources at once and
+/// keeps the best match:
+///   1. time-synced lyrics from YouTube Music (linked to this exact video),
+///      LRCLIB and NetEase Cloud Music, compared by how well their length
+///      matches the video;
+///   2. the video's hand-made captions;
+///   3. plain lyrics (YouTube Music, LRCLIB) with timings estimated from the
+///      song's length;
+///   4. the video's auto-generated captions, so even talks and podcasts get words.
 @MainActor
 @Observable
 final class LyricsService {
@@ -50,13 +60,15 @@ final class LyricsService {
         case idle
         case searching
         case synced([LyricLine], LyricsSource)
-        /// Lyrics without timings: shown as a slow scroll.
+        /// Lyrics without timings when the length is unknown (live streams).
         case plain([String])
         case instrumental
         case notFound
     }
 
     private(set) var state: State = .idle
+    /// True when the timings were estimated rather than published with the lyrics.
+    private(set) var approximate = false
     /// The track the current state belongs to.
     private(set) var trackKey = ""
     /// User nudge for out-of-sync lyrics, in seconds (positive shows lines later).
@@ -74,10 +86,8 @@ final class LyricsService {
     /// When set, lyrics follow this clock instead of the player (CI demo mode).
     @ObservationIgnored private(set) var demoStart: Date?
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var cache: [String: State] = [:]
+    @ObservationIgnored private var cache: [String: (State, Bool)] = [:]
     @ObservationIgnored weak var player: PlayerEngine?
-
-    nonisolated static let userAgent = "Encore/1.1.0 (https://github.com/BireshwarChakravarty/YTforMac)"
 
     /// Lyric time at `date`: the playhead, adjusted by the user's offset.
     func time(at date: Date = Date()) -> Double {
@@ -108,26 +118,52 @@ final class LyricsService {
             return
         }
         guard !isAd, !title.isEmpty, videoId != trackKey else { return }
-        // Wait for the duration so LRCLIB can match the right version, but don't stall forever.
+        // Wait for the duration so versions can be matched, but don't stall forever.
         guard duration > 0 || pendingSince(videoId) > 3 else { return }
         trackKey = videoId
         offset = 0
         if let cached = cache[videoId] {
-            state = cached
+            state = cached.0
+            approximate = cached.1
             return
         }
         state = .searching
+        approximate = false
         task?.cancel()
         let query = LyricsQuery(title: title, channel: author, duration: duration)
+        let region = Locale.current.region?.identifier ?? "US"
         task = Task { [weak self] in
-            let result = await Self.lookup(query)
+            let found = await Self.resolve(videoId: videoId, query: query, region: region)
             guard let self, !Task.isCancelled, self.trackKey == videoId else { return }
-            if case .notFound = result, let captions = await self.captionLyrics(videoId: videoId), !captions.isEmpty {
-                guard self.trackKey == videoId else { return }
-                self.finish(.synced(captions, .captions), for: videoId)
+            if let best = found.timed, let lines = best.lines {
+                self.finish(.synced(lines, best.source), approximate: false, for: videoId)
                 return
             }
-            self.finish(result, for: videoId)
+            if let captions = await self.captionLyrics(videoId: videoId, automatic: false) {
+                guard self.trackKey == videoId else { return }
+                self.finish(.synced(captions, .captions), approximate: false, for: videoId)
+                return
+            }
+            let length = found.length > 0 ? found.length : (self.player?.duration ?? 0)
+            if let plain = found.plain, let text = plain.plain, length > 0 {
+                let lines = LRC.estimated(text, duration: length)
+                if !lines.isEmpty {
+                    self.finish(.synced(lines, plain.source), approximate: true, for: videoId)
+                    return
+                }
+            }
+            if !found.instrumental, let captions = await self.captionLyrics(videoId: videoId, automatic: true) {
+                guard self.trackKey == videoId else { return }
+                self.finish(.synced(captions, .autoCaptions), approximate: false, for: videoId)
+                return
+            }
+            if found.instrumental {
+                self.finish(.instrumental, approximate: false, for: videoId)
+            } else if let text = found.plain?.plain {
+                self.finish(.plain(text), approximate: false, for: videoId)
+            } else {
+                self.finish(.notFound, approximate: false, for: videoId)
+            }
         }
     }
 
@@ -139,12 +175,13 @@ final class LyricsService {
         update(videoId: player.videoId, title: player.title, author: player.author, duration: player.duration, isAd: player.isAd)
     }
 
-    private func finish(_ result: State, for videoId: String) {
-        cache[videoId] = result
+    private func finish(_ result: State, approximate: Bool, for videoId: String) {
+        cache[videoId] = (result, approximate)
         state = result
+        self.approximate = approximate
         let summary: String
         switch result {
-        case .synced(let l, let s): summary = "synced \(l.count) lines from \(s.rawValue)"
+        case .synced(let l, let s): summary = "synced \(l.count) lines from \(s.rawValue)\(approximate ? " (estimated timing)" : "")"
         case .plain(let l): summary = "plain \(l.count) lines"
         case .instrumental: summary = "instrumental"
         case .notFound: summary = "not found"
@@ -157,6 +194,7 @@ final class LyricsService {
         task?.cancel()
         trackKey = ""
         state = .idle
+        approximate = false
     }
 
     @ObservationIgnored private var firstSeen: (id: String, at: Date) = ("", .distantPast)
@@ -171,90 +209,130 @@ final class LyricsService {
         task?.cancel()
         demoStart = Date().addingTimeInterval(-1.2)
         trackKey = "demo"
+        approximate = false
         state = .synced(LRC.parse(Self.demoLRC), .demo)
     }
 
-    // MARK: LRCLIB
+    // MARK: Choosing between sources
 
-
-    nonisolated static func lookup(_ q: LyricsQuery) async -> State {
-        var candidates: [LRCLibRecord] = []
-        if !q.artist.isEmpty, !q.track.isEmpty {
-            var items = [URLQueryItem(name: "track_name", value: q.track), URLQueryItem(name: "artist_name", value: q.artist)]
-            if q.duration > 0 { items.append(URLQueryItem(name: "duration", value: String(Int(q.duration.rounded())))) }
-            if let one: LRCLibRecord = await fetch("get", items) { candidates.append(one) }
-            if candidates.first?.syncedLyrics == nil, let many: [LRCLibRecord] = await fetch("search", [
-                URLQueryItem(name: "track_name", value: q.track), URLQueryItem(name: "artist_name", value: q.artist)]) {
-                candidates += many
-            }
-        }
-        if !candidates.contains(where: { $0.syncedLyrics != nil }),
-           let many: [LRCLibRecord] = await fetch("search", [URLQueryItem(name: "q", value: q.fullTitle)]) {
-            candidates += many
-        }
-        guard !candidates.isEmpty else { return .notFound }
-
-        // Prefer synced lyrics whose length matches the video.
-        func score(_ r: LRCLibRecord) -> Double {
-            var s = 0.0
-            if r.syncedLyrics?.isEmpty == false { s += 100 }
-            if let d = r.duration, q.duration > 0 {
-                let diff = abs(d - q.duration)
-                s += diff < 2 ? 40 : diff < 6 ? 25 : diff < 15 ? 5 : -40
-            }
-            if let t = r.trackName?.lowercased(), t == q.track.lowercased() { s += 10 }
-            return s
-        }
-        let best = candidates.max(by: { score($0) < score($1) })!
-        if let synced = best.syncedLyrics, !synced.isEmpty, score(best) > 60 || q.duration == 0 {
-            let lines = LRC.parse(synced)
-            if !lines.isEmpty { return .synced(lines, .lrclib) }
-        }
-        if best.instrumental == true { return .instrumental }
-        if let plain = best.plainLyrics, !plain.isEmpty, score(best) > -20 {
-            return .plain(plain.components(separatedBy: .newlines))
-        }
-        return .notFound
+    struct Resolution {
+        var timed: LyricsCandidate?
+        var plain: LyricsCandidate?
+        var instrumental = false
+        /// The song's length (the video's, or YouTube Music's when unknown).
+        var length: Double = 0
+        var candidates: [LyricsCandidate] = []
     }
 
-    nonisolated private static func fetch<T: Decodable>(_ endpoint: String, _ items: [URLQueryItem]) async -> T? {
-        var c = URLComponents(string: "https://lrclib.net/api/\(endpoint)")!
-        c.queryItems = items
-        guard let url = c.url else { return nil }
-        var request = URLRequest(url: url, timeoutInterval: 12)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("Encore", forHTTPHeaderField: "Lrclib-Client")
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            return nil
+    /// Asks every network source at once; retries LRCLIB and NetEase with the
+    /// song details YouTube Music recognises when the title alone wasn't enough.
+    nonisolated static func resolve(videoId: String, query: LyricsQuery, region: String) async -> Resolution {
+        async let ytmTask = YouTubeMusicLyrics.lookup(videoId: videoId, region: region)
+        async let lrcTask = LRCLibLyrics.lookup(query)
+        async let neTask = NetEaseLyrics.lookup(query)
+        let ytm = await ytmTask
+        var candidates = await lrcTask
+        if let n = await neTask { candidates.append(n) }
+        if let c = ytm.candidate { candidates.append(c) }
+        let duration = query.duration > 0 ? query.duration : (ytm.meta?.duration ?? 0)
+
+        if let meta = ytm.meta, !meta.artist.isEmpty,
+           (best(candidates, duration: duration).map { score($0, duration: duration) } ?? 0) < 130 {
+            let q2 = LyricsQuery(artist: meta.artist, track: LyricsQuery.stripFeaturing(LyricsQuery.clean(meta.title)), duration: duration)
+            if normalizedTitle(q2.track) != normalizedTitle(query.track) || normalizedTitle(q2.artist) != normalizedTitle(query.artist) {
+                async let l2 = LRCLibLyrics.lookup(q2)
+                async let n2 = NetEaseLyrics.lookup(q2)
+                candidates += await l2
+                if let n = await n2 { candidates.append(n) }
+            }
         }
+
+        var r = Resolution(length: duration, candidates: candidates)
+        r.timed = best(candidates, duration: duration)
+        // Plain text: YouTube Music's is tied to this video, so it comes first.
+        r.plain = candidates.first(where: { $0.plain != nil && $0.exactVideo }) ?? candidates.first(where: { $0.plain != nil })
+            ?? candidates.first(where: { $0.lines != nil }).map { c in
+                var p = c; p.plain = c.lines?.map(\.text); p.lines = nil; return p
+            }
+        r.instrumental = r.timed == nil && r.plain == nil && candidates.contains(where: { $0.instrumental })
+        return r
     }
 
-    // MARK: YouTube captions fallback
+    /// How much to trust a synced candidate: matching length matters most, then
+    /// whether YouTube Music linked it to this exact video.
+    nonisolated static func score(_ c: LyricsCandidate, duration: Double) -> Double {
+        guard let lines = c.lines, lines.filter({ !$0.text.isEmpty }).count >= 3 else { return -1 }
+        var s = 100.0
+        if c.exactVideo { s += 35 }
+        if let d = c.trackDuration, d > 0, duration > 0 {
+            let diff = abs(d - duration)
+            s += diff < 2 ? 40 : diff < 5 ? 28 : diff < 12 ? 10 : diff < 30 ? -15 : -60
+        }
+        if c.source == .lrclib { s += 2 }   // tie-break: LRCLIB timings are hand-checked
+        return s
+    }
 
-    /// Reads a hand-made caption track from the player page (auto-generated
-    /// captions are skipped: on music they're mostly "[Music]").
-    private func captionLyrics(videoId: String) async -> [LyricLine]? {
+    nonisolated static func best(_ candidates: [LyricsCandidate], duration: Double) -> LyricsCandidate? {
+        candidates.filter { score($0, duration: duration) >= 60 }
+            .max { score($0, duration: duration) < score($1, duration: duration) }
+    }
+
+    // MARK: YouTube captions
+
+    /// Reads a caption track from the player page: hand-made captions, or with
+    /// `automatic`, YouTube's speech recognition. YouTube now requires a token
+    /// to download captions directly, so when that fails Encore turns captions
+    /// on (hidden) and captures the file the player itself downloads.
+    private func captionLyrics(videoId: String, automatic: Bool) async -> [LyricLine]? {
         guard let webView = player?.webView else { return nil }
         let js = """
         const p = document.getElementById('movie_player');
         const resp = (p && p.getPlayerResponse && p.getPlayerResponse()) || window.ytInitialPlayerResponse || {};
         if (!resp.videoDetails || resp.videoDetails.videoId !== vid) return null;
         const tracks = ((resp.captions || {}).playerCaptionsTracklistRenderer || {}).captionTracks || [];
-        const manual = tracks.filter(t => t.kind !== 'asr');
-        if (!manual.length) return null;
-        const pick = manual.find(t => /^en/.test(t.languageCode)) || manual[0];
-        const r = await fetch(pick.baseUrl + '&fmt=json3', {credentials: 'include'});
-        const text = await r.text();
-        if (!text) return null;
-        const j = JSON.parse(text);
-        return (j.events || []).filter(e => e.segs).map(e => [e.tStartMs / 1000, (e.dDurationMs || 0) / 1000, e.segs.map(s => s.utf8 || '').join('')]);
+        const pool = tracks.filter(t => auto ? t.kind === 'asr' : t.kind !== 'asr');
+        if (!pool.length) return null;
+        const pref = (navigator.language || 'en').slice(0, 2);
+        const pick = pool.find(t => t.languageCode && t.languageCode.indexOf(pref) === 0) || pool.find(t => /^en/.test(t.languageCode)) || pool[0];
+        const parse = (text) => {
+          if (!text) return null;
+          text = text.trim();
+          if (text[0] === '{') {
+            const j = JSON.parse(text);
+            return (j.events || []).filter(e => e.segs).map(e => [e.tStartMs / 1000, (e.dDurationMs || 0) / 1000, e.segs.map(s => s.utf8 || '').join('')]);
+          }
+          const doc = new DOMParser().parseFromString(text, 'text/xml');
+          const ps = Array.from(doc.getElementsByTagName('p'));
+          if (ps.length) return ps.map(n => [(+n.getAttribute('t') || 0) / 1000, (+n.getAttribute('d') || 0) / 1000, n.textContent || '']);
+          return Array.from(doc.getElementsByTagName('text')).map(n => [+n.getAttribute('start') || 0, +n.getAttribute('dur') || 0, n.textContent || '']);
+        };
+        let rows = null;
+        try {
+          const r = await fetch(pick.baseUrl + '&fmt=json3', { credentials: 'include' });
+          rows = parse(await r.text());
+        } catch (e) {}
+        if (rows && rows.length) return rows;
+        let wasOn = false;
+        try { const cur = p.getOption('captions', 'track'); wasOn = !!(cur && cur.languageCode); } catch (e) {}
+        const text = await new Promise(resolve => {
+          let done = false;
+          const finish = (t) => { if (!done) { done = true; window.__encoreCaptionSink = null; resolve(t || ''); } };
+          window.__encoreCaptionSink = (url, t) => { if (url.indexOf('v=' + vid) >= 0 || url.indexOf(vid) >= 0) finish(t); };
+          if (!wasOn) document.documentElement.classList.add('encore-cc-hidden');
+          try {
+            p.loadModule('captions');
+            p.setOption('captions', 'track', { languageCode: pick.languageCode, kind: pick.kind || '' });
+          } catch (e) {}
+          setTimeout(() => finish(''), 7000);
+        });
+        if (!wasOn) {
+          try { p.unloadModule('captions'); } catch (e) {}
+          setTimeout(() => document.documentElement.classList.remove('encore-cc-hidden'), 500);
+        }
+        try { return parse(text); } catch (e) { return null; }
         """
         do {
-            let result = try await webView.callAsyncJavaScript(js, arguments: ["vid": videoId], in: nil, in: .page)
+            let result = try await webView.callAsyncJavaScript(js, arguments: ["vid": videoId, "auto": automatic], in: nil, in: .page)
             guard let rows = result as? [[Any]] else { return nil }
             var cues: [(Double, Double, String)] = []
             for row in rows where row.count == 3 {
@@ -262,13 +340,14 @@ final class LyricsService {
                 let dur = (row[1] as? NSNumber)?.doubleValue ?? 0
                 let text = (row[2] as? String ?? "")
                     .replacingOccurrences(of: "\n", with: " ")
-                    .replacingOccurrences(of: "♪", with: "")
+                    .replacingOccurrences(of: "\u{266A}", with: "")
+                    .replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)   // [Music], [Applause]
                     .trimmingCharacters(in: .whitespaces)
-                guard !text.isEmpty, !text.hasPrefix("[") else { continue }
+                guard !text.isEmpty else { continue }
                 cues.append((start, start + dur, text))
             }
-            guard cues.count >= 4 else { return nil }
-            return LRC.lines(from: cues)
+            guard cues.count >= 3 else { return nil }
+            return LRC.lines(from: automatic ? LRC.mergeShortCues(cues) : cues)
         } catch {
             return nil
         }
@@ -294,22 +373,19 @@ final class LyricsService {
     """
 }
 
-/// One result from the LRCLIB API.
-private struct LRCLibRecord: Decodable {
-    let trackName: String?
-    let artistName: String?
-    let duration: Double?
-    let instrumental: Bool?
-    let plainLyrics: String?
-    let syncedLyrics: String?
-}
-
 /// Artist and track guessed from a YouTube title and channel.
 struct LyricsQuery {
     let artist: String
     let track: String
     let fullTitle: String
     let duration: Double
+
+    init(artist: String, track: String, duration: Double) {
+        self.artist = artist
+        self.track = track
+        self.fullTitle = artist.isEmpty ? track : "\(artist) \(track)"
+        self.duration = duration
+    }
 
     init(title: String, channel: String, duration: Double) {
         self.duration = duration
@@ -452,6 +528,49 @@ enum LRC {
             cleaned.append(LyricLine(id: cleaned.count, start: l.start, end: l.end, text: l.text, words: l.words))
         }
         return cleaned
+    }
+
+    /// Timings for plain lyrics: lines are spread over the song (after a short
+    /// intro, before the outro) in proportion to their length, with blank lines
+    /// as breathing pauses. Approximate, but it keeps the words moving.
+    static func estimated(_ text: [String], duration: Double) -> [LyricLine] {
+        var rows = text.map { $0.trimmingCharacters(in: .whitespaces) }
+        while rows.first?.isEmpty == true { rows.removeFirst() }
+        while rows.last?.isEmpty == true { rows.removeLast() }
+        var collapsed: [String] = []
+        for r in rows where !(r.isEmpty && collapsed.last?.isEmpty == true) {
+            // Section labels like "[Chorus]" aren't sung.
+            if r.hasPrefix("[") && r.hasSuffix("]") { continue }
+            collapsed.append(r)
+        }
+        guard collapsed.contains(where: { !$0.isEmpty }), duration > 20 else { return [] }
+        let start = min(max(6, duration * 0.07), 25)
+        let end = duration * 0.93
+        let weights = collapsed.map { $0.isEmpty ? 14.0 : Double(max(8, $0.count)) + 6 }
+        let total = weights.reduce(0, +)
+        var t = start
+        var cues: [(Double, String, [(Double, String)])] = []
+        for (i, row) in collapsed.enumerated() {
+            cues.append((t, row, []))
+            t += (end - start) * weights[i] / total
+        }
+        return build(cues)
+    }
+
+    /// Auto-captions arrive as short overlapping fragments; join them into
+    /// phrases a few seconds long.
+    static func mergeShortCues(_ cues: [(Double, Double, String)]) -> [(Double, Double, String)] {
+        var out: [(Double, Double, String)] = []
+        for c in cues {
+            if var last = out.last, c.0 - last.0 < 3.5, last.2.count + c.2.count < 48, c.0 - last.1 < 1.0 {
+                last.1 = max(last.1, c.1)
+                last.2 += " " + c.2
+                out[out.count - 1] = last
+            } else {
+                out.append(c)
+            }
+        }
+        return out
     }
 
     /// Spreads a line's duration over its words, weighted by length.

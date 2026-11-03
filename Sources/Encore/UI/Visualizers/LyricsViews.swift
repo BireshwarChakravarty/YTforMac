@@ -403,7 +403,7 @@ struct LyricsInfoChip: View {
         if let source = lyrics.source {
             HStack(spacing: 6) {
                 Image(systemName: "quote.bubble.fill").foregroundStyle(model.player.palette.primary)
-                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)")
+                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)\(lyrics.approximate ? " \u{00B7} timing estimated" : "")")
                     .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Palette.textSecondary)
                 Divider().frame(height: 12)

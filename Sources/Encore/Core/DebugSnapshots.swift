@@ -139,23 +139,24 @@ enum DebugSnapshots {
 
     /// Checks title cleanup and a real LRCLIB lookup (prints counts only).
     private static func lyricsSelfTest() async {
-        let samples: [(String, String, Double)] = [
-            ("Daft Punk - Get Lucky (Official Audio) ft. Pharrell Williams, Nile Rodgers", "Daft Punk", 369),
-            ("Coldplay - Viva La Vida (Official Video)", "Coldplay", 244),
-            ("The Weeknd - Blinding Lights (Official Audio)", "TheWeekndVEVO", 201),
-            ("Bohemian Rhapsody", "Queen Official", 355),
+        let samples: [(String, String, String, Double)] = [
+            ("dQw4w9WgXcQ", "Rick Astley - Never Gonna Give You Up (Official Music Video)", "Rick Astley", 213),
+            ("kJQP7kiw5Fk", "Luis Fonsi - Despacito ft. Daddy Yankee", "LuisFonsiVEVO", 282),
+            ("BddP6PYo2gs", "Kesariya (Synthwave)", "VDJ Fly", 173),
+            ("", "Arijit Singh: Tum Hi Ho Full Video | Aashiqui 2", "T-Series", 262),
+            ("", "Daft Punk - Get Lucky (Official Audio) ft. Pharrell Williams, Nile Rodgers", "Daft Punk", 369),
+            ("", "The Weeknd - Blinding Lights (Official Audio)", "TheWeekndVEVO", 201),
         ]
-        for (title, channel, duration) in samples {
+        let region = Locale.current.region?.identifier ?? "US"
+        for (id, title, channel, duration) in samples {
             let q = LyricsQuery(title: title, channel: channel, duration: duration)
-            let result = await LyricsService.lookup(q)
-            let summary: String
-            switch result {
-            case .synced(let lines, let source): summary = "synced \(lines.count) lines (\(source.rawValue)), first at \(String(format: "%.1f", lines.first?.start ?? 0))s"
-            case .plain(let lines): summary = "plain \(lines.count) lines"
-            case .instrumental: summary = "instrumental"
-            default: summary = "not found"
-            }
-            print("LYRICSTEST artist=\"\(q.artist)\" track=\"\(q.track)\" -> \(summary)")
+            let r = await LyricsService.resolve(videoId: id, query: q, region: region)
+            let all = r.candidates.map { c -> String in
+                let kind = c.lines != nil ? "synced \(c.lines!.count)" : c.plain != nil ? "plain" : c.instrumental ? "instrumental" : "?"
+                return "\(c.source.rawValue):\(kind):\(Int(LyricsService.score(c, duration: duration)))"
+            }.joined(separator: ", ")
+            let pick = r.timed.map { "\($0.source.rawValue) synced" } ?? r.plain.map { "\($0.source.rawValue) plain (estimated timing)" } ?? (r.instrumental ? "instrumental" : "none")
+            print("LYRICSTEST \"\(q.artist)\" / \"\(q.track)\" -> \(pick)  [\(all)]")
         }
         let parsed = LRC.parse(LyricsService.demoLRC)
         print("LYRICSTEST demo parsed \(parsed.count) lines; words in line 1: \(parsed.first(where: { !$0.text.isEmpty })?.words.count ?? 0)")

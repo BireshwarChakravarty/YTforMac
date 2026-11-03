@@ -191,6 +191,36 @@ enum Scripts {
         try { window.webkit.messageHandlers.encore.postMessage(Object.assign({ type }, payload || {})); } catch (e) {}
       };
 
+      // Lyrics fallback: when Encore asks the player for captions, capture the
+      // caption file the player downloads (it carries the tokens YouTube now
+      // requires) and hand it to whoever is waiting in window.__encoreCaptionSink.
+      (() => {
+        const deliver = (url, text) => {
+          if (!text || !window.__encoreCaptionSink || String(url).indexOf('/api/timedtext') < 0) return;
+          try { window.__encoreCaptionSink(String(url), text); } catch (e) {}
+        };
+        const origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          this.__encoreURL = url;
+          if (String(url).indexOf('/api/timedtext') >= 0) {
+            this.addEventListener('load', () => { try { deliver(this.__encoreURL, this.responseText); } catch (e) {} });
+          }
+          return origOpen.apply(this, arguments);
+        };
+        const origFetch = window.fetch;
+        window.fetch = function (input) {
+          const url = typeof input === 'string' ? input : (input && input.url) || '';
+          const result = origFetch.apply(this, arguments);
+          if (String(url).indexOf('/api/timedtext') >= 0) {
+            result.then(r => r.clone().text().then(t => deliver(url, t))).catch(() => {});
+          }
+          return result;
+        };
+        const css = document.createElement('style');
+        css.textContent = 'html.encore-cc-hidden .ytp-caption-window-container, html.encore-cc-hidden .caption-window { display: none !important; }';
+        (document.head || document.documentElement).appendChild(css);
+      })();
+
       const settings = Object.assign({
         autoSkipAds: true,
         dismissStillWatching: true,
