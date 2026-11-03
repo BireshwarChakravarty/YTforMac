@@ -1,11 +1,109 @@
 import SwiftUI
 
-/// The native layer of Night Drive: what's on the car's two screens. The
-/// infotainment screen shows the song (the LED bars under it are drawn by the
-/// Metal scene) and the digital cluster shows the speed between its gauges.
+/// The native layer of Night Drive. Over the real footage it's a windshield
+/// head-up display; over the drawn cabin (used only if the footage is missing)
+/// it fills in the car's two screens.
 struct DriveOverlay: View {
     var compact = false
 
+    var body: some View {
+        if Bundle.main.url(forResource: "drive-rain", withExtension: "mp4") != nil {
+            GeometryReader { geo in
+                DriveHUD(compact: compact)
+                    .frame(width: min(geo.size.width * (compact ? 0.9 : 0.62), compact ? 340 : 600))
+                    .position(x: geo.size.width / 2, y: geo.size.height * (compact ? 0.5 : 0.6))
+                    .allowsHitTesting(false)
+            }
+        } else {
+            CabinScreensOverlay()
+        }
+    }
+}
+
+/// A windshield head-up display: luminous, slightly translucent figures that
+/// look projected onto the glass. Speed follows the car in the footage.
+private struct DriveHUD: View {
+    var compact = false
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1.0 / 15)) { _ in
+            let ink = Color(red: 0.78, green: 0.97, blue: 1.0)
+            content(ink: ink)
+                .overlay(content(ink: ink).opacity(0.12).offset(y: compact ? 1.5 : 3).blur(radius: 1))   // the faint double image of a real HUD
+                .shadow(color: Color(red: 0.3, green: 0.9, blue: 1.0).opacity(0.55), radius: compact ? 4 : 8)
+                .rotation3DEffect(.degrees(12), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+                .blendMode(.screen)
+                .opacity(0.92)
+        }
+    }
+
+    private func content(ink: Color) -> some View {
+        let player = model.player
+        let footage = FootagePlayer.shared
+        let speed = Int(footage.speed().rounded())
+        let scale: CGFloat = compact ? 0.55 : 1
+        return HStack(alignment: .center, spacing: 34 * scale) {
+            // speed limit sign
+            ZStack {
+                Circle().strokeBorder(Color(red: 1, green: 0.32, blue: 0.3), lineWidth: 5 * scale)
+                Text("\(footage.speedLimit())")
+                    .font(.system(size: 19 * scale, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(ink)
+            }
+            .frame(width: 46 * scale, height: 46 * scale)
+
+            VStack(spacing: -4 * scale) {
+                Text("\(speed)")
+                    .font(.system(size: 66 * scale, weight: .medium, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
+                Text("km/h")
+                    .font(.system(size: 14 * scale, weight: .semibold, design: .rounded))
+                    .tracking(1.5)
+                    .opacity(0.8)
+            }
+            .foregroundStyle(ink)
+            .frame(minWidth: 96 * scale)
+
+            if !compact {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        HUDEqualizer(color: ink)
+                            .frame(width: 22, height: 14)
+                        Text(player.title.isEmpty ? "Encore" : player.title)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                    }
+                    Text(player.author.isEmpty ? "Now playing" : player.author)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .opacity(0.75)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(ink)
+                .frame(maxWidth: 230, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// Five bars dancing with the music, HUD style.
+private struct HUDEqualizer: View {
+    let color: Color
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let bands = model.visualizer.bands
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                let v = bands.isEmpty ? 0.3 : CGFloat(bands[min(bands.count - 1, i * max(1, bands.count / 6))])
+                Capsule().fill(color).frame(width: 2.6, height: max(2, 14 * min(1, v * 1.2)))
+            }
+        }
+    }
+}
+
+/// The drawn cabin's two screens (fallback when the footage isn't bundled).
+private struct CabinScreensOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height

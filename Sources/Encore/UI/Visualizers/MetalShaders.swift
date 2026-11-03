@@ -1102,5 +1102,83 @@ fragment float4 driveFragment(QuadOut in [[stage_in]],
                             texture2d<float> specTex [[texture(0)]]) {
     return driveScene(fragCoord(in.position, u), u, specTex);
 }
+
+// ================================================================ Night Drive footage
+// Real driving footage (see FootagePlayer) treated as a visualiser: the video is
+// lifted back into HDR so neon and headlights bloom, highlights flare on the
+// beat and swell with the bass, shadows take on the artwork's colour, a light
+// sharpening pass keeps 720p crisp on large screens, and clips shot without
+// rain get raindrops refracting the scene on the glass.
+
+struct FootageParams {
+    float mixAB;
+    float rainA;
+    float rainB;
+    float aspect;
+};
+
+static float3 vtex(texture2d<float> t, float2 uv) { return t.sample(linearSampler, uv).rgb; }
+
+/// Undoes the composite pass's ACES curve and gamma, so ordinary video frames
+/// come out looking like themselves while bright lights become true HDR.
+static float3 acesInverse(float3 v) {
+    float3 y = clamp(pow(clamp(v, 0.0, 1.0), float3(1.12)), 0.0, 0.975);
+    float3 a = 2.51 - 2.43 * y;
+    float3 b = 0.03 - 0.59 * y;
+    float3 c = -0.14 * y;
+    return (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
+}
+
+static float3 footageTap(texture2d<float> t, float2 uv, float2 texel) {
+    float3 c = vtex(t, uv);
+    float3 n = vtex(t, uv + float2(texel.x, 0.0)) + vtex(t, uv - float2(texel.x, 0.0))
+             + vtex(t, uv + float2(0.0, texel.y)) + vtex(t, uv - float2(0.0, texel.y));
+    return clamp(c + (c - n * 0.25) * 0.55, 0.0, 1.0);
+}
+
+static float4 footageScene(float2 fc, constant Uniforms &u, texture2d<float> vidA, texture2d<float> vidB, constant FootageParams &fp) {
+    float2 uv = fc / u.res;
+    float sa = u.res.x / u.res.y;
+    // aspect-fill the frame, with a hair of overscan
+    float2 q = uv - 0.5;
+    if (sa > fp.aspect) { q.y *= fp.aspect / sa; } else { q.x *= sa / fp.aspect; }
+    q /= 1.03;
+    float2 tuv = float2(q.x + 0.5, 0.5 - q.y);
+    float2 texel = float2(1.0 / 1280.0, 1.0 / 720.0);
+    // raindrops on the glass for clips that weren't shot in the rain
+    float rain = mix(fp.rainA, fp.rainB, fp.mixAB);
+    float2 p = (fc - 0.5 * u.res) / u.res.y;
+    float3 drops = float3(0.0);
+    if (rain > 0.01) {
+        drops = driveRain(p * 1.15, u.time, 30.0);
+        tuv += float2(drops.x, -drops.y) * 1.6 * rain;
+    }
+    float3 a = footageTap(vidA, tuv, texel);
+    float3 b = footageTap(vidB, tuv, texel);
+    float3 v = mix(a, b, smoothstep(0.0, 1.0, fp.mixAB));
+    if (rain > 0.01) {
+        v = mix(v, v * 0.88 + 0.025, drops.z * 0.5 * rain);
+    }
+    // gentle grade: shadows lean towards the artwork's colours
+    float l = dot(v, float3(0.2126, 0.7152, 0.0722));
+    v = mix(v, v * (0.65 + 0.7 * u.p2.rgb), 0.18 * (1.0 - smoothstep(0.0, 0.5, l)));
+    float3 x = acesInverse(v);
+    // the music: the whole frame breathes on the beat, lights flare with the bass
+    // flare the lights (bright and colourful, or small and intense), not the sky
+    float sat = max(v.r, max(v.g, v.b)) - min(v.r, min(v.g, v.b));
+    float hi = smoothstep(0.7, 1.0, l) * (0.3 + 0.7 * smoothstep(0.12, 0.45, sat));
+    x *= 1.0 + 0.04 * u.beat;
+    x += x * hi * (0.22 * u.bass + 0.25 * u.beat);
+    return float4(x, 1.0);
+}
+
+fragment float4 footageFragment(QuadOut in [[stage_in]],
+                                constant Uniforms &u [[buffer(0)]],
+                                constant FootageParams &fp [[buffer(2)]],
+                                texture2d<float> vidA [[texture(2)]],
+                                texture2d<float> vidB [[texture(3)]]) {
+    return footageScene(fragCoord(in.position, u), u, vidA, vidB, fp);
+}
+
 """#
 }
