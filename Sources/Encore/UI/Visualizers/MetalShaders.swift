@@ -1430,7 +1430,8 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
         overhead += exp(-pow(lz - 6.0, 2.0) * 0.05);
     }
     float3 sodium = float3(1.0, 0.66, 0.34);
-    view += sodium * overhead * (r.z * 0.35 + 0.035 * smoothstep(0.5, -0.6, p.x + p.y * 0.6));
+    view *= 1.0 + sodium * overhead * r.z * 0.22;
+    view += sodium * overhead * 0.03 * smoothstep(0.5, -0.6, p.x + p.y * 0.6);
     view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
 
     // the painted cabin
