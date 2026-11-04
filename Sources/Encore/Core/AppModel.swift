@@ -32,6 +32,7 @@ final class AppModel {
         browser = BrowserEngine(settings: AppSettings.shared)
         nowPlaying = NowPlayingCenter(player: player)
         lyrics.player = player
+        lyrics.audioTap = audioTap
 
         player.onBrowseRequest = { [weak self] url in
             self?.browse(url)

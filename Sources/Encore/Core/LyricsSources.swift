@@ -9,6 +9,8 @@ struct LyricsCandidate {
     var instrumental = false
     /// Linked to this very video by YouTube Music (no guessing involved).
     var exactVideo = false
+    var title: String?
+    var artist: String?
 }
 
 /// The song YouTube Music recognises in a video.
@@ -53,7 +55,8 @@ private func titlesMatch(_ a: String, _ b: String) -> Bool {
 // MARK: - YouTube Music
 
 /// YouTube Music's own lyrics (licensed from LyricFind/Musixmatch), looked up by
-/// video id. Many are time-synced, including a lot of non-English music.
+/// video id with the YouTube Music web client, as music.youtube.com shows them.
+/// These are plain text; Encore times them by listening to the song.
 enum YouTubeMusicLyrics {
     static func lookup(videoId: String, region: String) async -> (meta: MusicMetadata?, candidate: LyricsCandidate?) {
         guard let next = await post("next", ["videoId": videoId, "isAudioOnly": true],
@@ -75,28 +78,11 @@ enum YouTubeMusicLyrics {
         guard let tab = dig(tabs, 1, "tabRenderer") as? [String: Any], tab["unselectable"] as? Bool != true,
               let browseId = dig(tab, "endpoint", "browseEndpoint", "browseId") as? String else { return (meta, nil) }
 
-        // The Android client returns timings; the web client only plain text.
-        if let timed = await post("browse", ["browseId": browseId], client: "ANDROID_MUSIC", version: "7.21.50", region: region),
-           let rows = dig(timed, "contents", "elementRenderer", "newElement", "type", "componentType", "model",
-                          "timedLyricsModel", "lyricsData", "timedLyricsData") as? [[String: Any]], !rows.isEmpty {
-            var cues: [(Double, Double, String)] = []
-            for row in rows {
-                guard let start = (dig(row, "cueRange", "startTimeMilliseconds") as? String).flatMap(Double.init) else { continue }
-                let end = (dig(row, "cueRange", "endTimeMilliseconds") as? String).flatMap(Double.init) ?? start
-                var text = (row["lyricLine"] as? String ?? "").trimmingCharacters(in: .whitespaces)
-                if text == "\u{266A}" || text == "\u{266B}" { text = "" }
-                cues.append((start / 1000, end / 1000, text))
-            }
-            if cues.count >= 3 {
-                return (meta, LyricsCandidate(lines: LRC.lines(from: cues), source: .youtubeMusic,
-                                              trackDuration: meta?.duration, exactVideo: true))
-            }
-        }
         if let page = await post("browse", ["browseId": browseId], client: "WEB_REMIX", version: "1.20251015.01.00", region: region),
            let text = dig(page, "contents", "sectionListRenderer", "contents", 0, "musicDescriptionShelfRenderer",
                           "description", "runs", 0, "text") as? String, !text.isEmpty {
             return (meta, LyricsCandidate(plain: text.components(separatedBy: .newlines), source: .youtubeMusic,
-                                          trackDuration: meta?.duration, exactVideo: true))
+                                          trackDuration: meta?.duration, exactVideo: true, title: meta?.title, artist: meta?.artist))
         }
         return (meta, nil)
     }
@@ -157,10 +143,11 @@ enum LRCLibLyrics {
             .sorted { abs(($0.duration ?? 0) - q.duration) < abs(($1.duration ?? 0) - q.duration) }
         for r in synced.prefix(3) {
             let lines = LRC.parse(r.syncedLyrics ?? "")
-            if !lines.isEmpty { out.append(LyricsCandidate(lines: lines, source: .lrclib, trackDuration: r.duration)) }
+            if !lines.isEmpty { out.append(LyricsCandidate(lines: lines, source: .lrclib, trackDuration: r.duration, title: r.trackName, artist: r.artistName)) }
         }
         if let r = records.first(where: { $0.plainLyrics?.isEmpty == false }) {
-            out.append(LyricsCandidate(plain: r.plainLyrics!.components(separatedBy: .newlines), source: .lrclib, trackDuration: r.duration))
+            out.append(LyricsCandidate(plain: r.plainLyrics!.components(separatedBy: .newlines), source: .lrclib, trackDuration: r.duration,
+                                       title: r.trackName, artist: r.artistName))
         }
         if out.isEmpty, records.contains(where: { $0.instrumental == true }) {
             out.append(LyricsCandidate(source: .lrclib, instrumental: true))
@@ -230,7 +217,8 @@ enum NetEaseLyrics {
             }
             let lines = LRC.parse(stripCredits(text))
             if lines.filter({ !$0.text.isEmpty }).count >= 3 {
-                return LyricsCandidate(lines: lines, source: .netease, trackDuration: song.duration / 1000)
+                return LyricsCandidate(lines: lines, source: .netease, trackDuration: song.duration / 1000,
+                                       title: song.name, artist: song.artists.map(\.name).joined(separator: ", "))
             }
         }
         return nil

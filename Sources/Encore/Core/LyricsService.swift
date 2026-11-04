@@ -69,8 +69,15 @@ final class LyricsService {
     private(set) var state: State = .idle
     /// True when the timings were estimated rather than published with the lyrics.
     private(set) var approximate = false
-    /// True once the lyrics have been re-timed against this video's captions.
+    /// True once the lyrics have been re-timed against this video (captions or by ear).
     private(set) var aligned = false
+    /// Short description of how the lyrics are synced (chip and details).
+    private(set) var syncLabel = ""
+    /// Listening to the song to align the lyrics by ear.
+    private(set) var listening: LyricsListener.Status = .off
+    /// Everything that happened while finding and syncing the lyrics, for the
+    /// details popover ("Copy details" lets people send it along with a report).
+    private(set) var details: [String] = []
     /// The track the current state belongs to.
     private(set) var trackKey = ""
     /// User nudge for out-of-sync lyrics, in seconds (positive shows lines later).
@@ -91,6 +98,12 @@ final class LyricsService {
     @ObservationIgnored private var cache: [String: (State, Bool)] = [:]
     @ObservationIgnored private var alignTask: Task<Void, Never>?
     @ObservationIgnored private var alignedCache: [String: [LyricLine]] = [:]
+    @ObservationIgnored private var baseLines: [LyricLine] = []          // as found, before alignment
+    @ObservationIgnored private var captionHeard: [LyricsAligner.Word] = []
+    @ObservationIgnored private var earHeard: [LyricsAligner.Word] = []
+    @ObservationIgnored private let listener = LyricsListener()
+    @ObservationIgnored private var watchdog: Timer?
+    @ObservationIgnored weak var audioTap: AudioTap?
     @ObservationIgnored weak var player: PlayerEngine?
 
     /// Lyric time at `date`: the playhead, adjusted by the user's offset.
@@ -127,13 +140,19 @@ final class LyricsService {
         trackKey = videoId
         offset = 0
         alignTask?.cancel()
+        stopListening()
         aligned = false
+        syncLabel = ""
+        baseLines = []
+        captionHeard = []
+        earHeard = []
         if let cached = cache[videoId] {
             state = cached.0
             approximate = cached.1
             if case .synced(_, let source) = cached.0, let lines = alignedCache[videoId] {
                 state = .synced(lines, source)
                 aligned = true
+                syncLabel = "synced"
             }
             return
         }
@@ -142,9 +161,18 @@ final class LyricsService {
         task?.cancel()
         let query = LyricsQuery(title: title, channel: author, duration: duration)
         let region = Locale.current.region?.identifier ?? "US"
+        details = ["Video: \(title) \u{2014} \(author) (\(formatTime(duration)), id \(videoId))",
+                   "Searched as: \(query.artist.isEmpty ? "?" : query.artist) / \(query.track)"]
         task = Task { [weak self] in
             let found = await Self.resolve(videoId: videoId, query: query, region: region)
             guard let self, !Task.isCancelled, self.trackKey == videoId else { return }
+            self.details += found.candidates.map { c in
+                let kind = c.lines != nil ? "synced, \(c.lines!.count) lines" : c.plain != nil ? "plain text" : c.instrumental ? "instrumental" : "?"
+                let what = [c.artist, c.title].compactMap { $0 }.joined(separator: " / ")
+                let len = c.trackDuration.map { formatTime($0) } ?? "?"
+                return "Found: \(c.source.rawValue) \u{2014} \(what.isEmpty ? "(untitled)" : what), \(len), \(kind), score \(Int(Self.score(c, duration: query.duration)))"
+            }
+            if found.candidates.isEmpty { self.details.append("Found: nothing from YouTube Music, LRCLIB or NetEase") }
             if let best = found.timed, let lines = best.lines {
                 self.finish(.synced(lines, best.source), approximate: false, for: videoId)
                 return
@@ -189,8 +217,14 @@ final class LyricsService {
         cache[videoId] = (result, approximate)
         state = result
         self.approximate = approximate
-        if case .synced(_, let source) = result, source != .captions, source != .autoCaptions, source != .demo {
+        if case .synced(let lines, let source) = result, source != .captions, source != .autoCaptions, source != .demo {
+            baseLines = lines
+            syncLabel = approximate ? "timing estimated" : ""
+            details.append("Using: \(source.rawValue)\(approximate ? " (plain lyrics, timing estimated)" : "")")
             scheduleAlignment(videoId: videoId, reestimate: approximate)
+            startListening()
+        } else if case .synced(_, let source) = result {
+            details.append("Using: \(source.rawValue)")
         }
         let summary: String
         switch result {
@@ -203,29 +237,106 @@ final class LyricsService {
         print("LYRICS \(videoId): \(summary)")
     }
 
-    /// Re-times the lyrics to this video using its captions: hand-made ones
-    /// first, then auto-generated ones (which carry per-word timings).
+    /// Fetches this video's captions (hand-made, then auto-generated) as timed
+    /// words to align against; the listener adds what it hears as the song plays.
     private func scheduleAlignment(videoId: String, reestimate: Bool) {
         alignTask?.cancel()
         alignTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
             for automatic in [false, true] {
-                guard let self, !Task.isCancelled, self.trackKey == videoId,
-                      case .synced(let lines, let source) = self.state else { return }
-                guard let words = await self.captionWords(videoId: videoId, automatic: automatic) else { continue }
-                guard let mapped = LyricsAligner.align(lines, to: words, reestimate: reestimate) else {
-                    print("LYRICS \(videoId): \(automatic ? "auto-" : "")captions didn't match the lyrics (\(words.count) words)")
+                guard let self, !Task.isCancelled, self.trackKey == videoId else { return }
+                guard let words = await self.captionWords(videoId: videoId, automatic: automatic) else {
+                    self.details.append("\(automatic ? "Auto-captions" : "Captions"): none available")
                     continue
                 }
                 guard self.trackKey == videoId, !Task.isCancelled else { return }
-                let shift = mapped.first.map { $0.start - lines[0].start } ?? 0
-                self.alignedCache[videoId] = mapped
-                self.state = .synced(mapped, source)
-                self.aligned = true
-                print("LYRICS \(videoId): aligned to \(automatic ? "auto-" : "")captions, first line moved \(String(format: "%+.1f", shift))s")
-                return
+                self.captionHeard += words
+                self.details.append("\(automatic ? "Auto-captions" : "Captions"): \(words.count) words")
+                if self.realign(reason: automatic ? "auto-captions" : "captions") { return }
             }
         }
+    }
+
+    /// Re-times the lyrics from everything heard so far. Returns true on success.
+    @discardableResult
+    private func realign(reason: String) -> Bool {
+        guard case .synced(_, let source) = state, !baseLines.isEmpty else { return false }
+        let words = (captionHeard + earHeard).sorted { $0.time < $1.time }
+        guard let r = LyricsAligner.align(baseLines, to: words, reestimate: approximate) else { return false }
+        state = .synced(r.lines, source)
+        aligned = true
+        alignedCache[trackKey] = r.lines
+        let byEar = !earHeard.isEmpty
+        syncLabel = byEar ? "synced by ear" : "synced to video"
+        let summary = "Aligned (\(reason)): \(r.anchors) matching words, first line moved \(String(format: "%+.1f", r.shiftAtStart)) s, covers \(Int(r.coverage * 100))% of the song"
+        if details.last?.hasPrefix("Aligned") == true { details[details.count - 1] = summary } else { details.append(summary) }
+        print("LYRICS \(trackKey): \(summary)")
+        // Plenty of evidence: stop listening to save energy.
+        if r.anchors >= 40, r.coverage >= 0.75 { stopListening(note: "enough matches") }
+        return true
+    }
+
+    // MARK: Listening (align by ear)
+
+    /// Listens to the song with on-device speech recognition so the lyrics can be
+    /// aligned to what's actually sung. Asks for permission the first time.
+    func startListening() {
+        guard !baseLines.isEmpty, demoStart == nil, watchdog == nil else { return }
+        let videoId = trackKey
+        LyricsListener.requestAuthorization { [weak self] ok in
+            guard let self, self.trackKey == videoId, self.watchdog == nil else { return }
+            guard ok else {
+                self.listening = .needsPermission
+                self.details.append("Listening: speech recognition is turned off for Encore")
+                return
+            }
+            guard let recognizer = LyricsListener.recognizer(for: self.baseLines) else {
+                self.listening = .unavailable("no on-device speech model")
+                self.details.append("Listening: no on-device speech recognition for this language")
+                return
+            }
+            let listener = self.listener
+            listener.onWords = { [weak self] words in
+                guard let self, self.trackKey == videoId else { return }
+                self.earHeard += words
+                if self.details.last?.hasPrefix("Heard") == true { self.details.removeLast() }
+                self.details.append("Heard \(self.earHeard.count) words by ear so far")
+                self.realign(reason: "by ear")
+            }
+            self.audioTap?.sampleSink = { samples, rate in listener.feed(samples, sampleRate: rate) }
+            listener.start(recognizer: recognizer, videoTime: self.player?.position() ?? 0)
+            self.listening = .listening(recognizer.locale.identifier)
+            self.details.append("Listening: on-device speech recognition (\(recognizer.locale.identifier))")
+            // Seeks and pauses break the timeline; start over when they happen.
+            self.watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let player = self.player else { return }
+                    listener.timeline { t in
+                        DispatchQueue.main.async {
+                            guard let t, player.isPlaying, abs(t - player.position()) > 1.5 else { return }
+                            listener.start(recognizer: recognizer, videoTime: player.position())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func stopListening(note: String? = nil) {
+        watchdog?.invalidate()
+        watchdog = nil
+        listener.stop()
+        audioTap?.sampleSink = nil
+        if case .listening = listening {
+            listening = .off
+            if let note { details.append("Listening stopped: \(note)") }
+        }
+    }
+
+    /// Copyable report of what happened (for the details popover).
+    var detailsText: String {
+        (details + ["Offset: \(String(format: "%+.2f", offset)) s", "Encore \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")"])
+            .joined(separator: "\n")
     }
 
     /// Makes `line` the one being sung right now (Option-click in Sing-Along).
@@ -236,7 +347,9 @@ final class LyricsService {
 
     private func reset() {
         alignTask?.cancel()
+        stopListening()
         aligned = false
+        syncLabel = ""
         task?.cancel()
         trackKey = ""
         state = .idle

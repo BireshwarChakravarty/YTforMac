@@ -18,10 +18,20 @@ enum LyricsAligner {
         let text: String
     }
 
+    struct Alignment {
+        let lines: [LyricLine]
+        /// Matching words that agree with each other (more = more trustworthy).
+        let anchors: Int
+        /// Share of the song's lyrics span the anchors cover.
+        let coverage: Double
+        /// How far the first line moved.
+        let shiftAtStart: Double
+    }
+
     /// Returns the lines re-timed to the video, or nil when there isn't enough
     /// evidence to trust an alignment. `reestimate` re-spreads the words inside
     /// each line (for lyrics whose timings were estimated in the first place).
-    static func align(_ lines: [LyricLine], to captions: [Word], reestimate: Bool) -> [LyricLine]? {
+    static func align(_ lines: [LyricLine], to captions: [Word], reestimate: Bool) -> Alignment? {
         let sung = lines.filter { !$0.text.isEmpty }
         guard sung.count >= 4, captions.count >= 8 else { return nil }
 
@@ -58,7 +68,8 @@ enum LyricsAligner {
         for (i, p) in chain.enumerated() where abs(deltas[i] - local[i]) <= 1.5 {
             anchors.append((p.0, deltas[i]))
         }
-        guard anchors.count >= 6 else { return nil }
+        // Speech recognition on music is noisy: insist the chain mostly agrees.
+        guard anchors.count >= 6, Double(anchors.count) >= Double(chain.count) * 0.55 else { return nil }
         let lyricSpan = (sung.last?.start ?? 0) - (sung.first?.start ?? 0)
         let covered = (anchors.last?.0 ?? 0) - (anchors.first?.0 ?? 0)
         guard covered >= min(30, lyricSpan * 0.3) else { return nil }
@@ -100,7 +111,9 @@ enum LyricsAligner {
             out[i] = LyricLine(id: l.id, start: l.start, end: max(l.start + 0.3, out[i + 1].start), text: l.text,
                                words: reestimate ? LRC.estimate(l.text, start: l.start, end: max(l.start + 0.3, out[i + 1].start)) : l.words)
         }
-        return out
+        let shiftAtStart = (out.first(where: { !$0.text.isEmpty })?.start ?? 0) - (sung.first?.start ?? 0)
+        return Alignment(lines: out, anchors: anchors.count, coverage: lyricSpan > 0 ? min(1, covered / lyricSpan) : 1,
+                         shiftAtStart: shiftAtStart)
     }
 
     // MARK: Tokens

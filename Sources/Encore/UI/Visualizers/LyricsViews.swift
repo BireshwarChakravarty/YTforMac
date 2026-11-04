@@ -30,7 +30,11 @@ struct LyricsStage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { model.refreshLyrics() }
+        .onAppear {
+            model.refreshLyrics()
+            model.lyrics.startListening()
+        }
+        .onDisappear { model.lyrics.stopListening() }
         .onChange(of: model.player.videoId) { model.refreshLyrics() }
         .onChange(of: model.player.title) { model.refreshLyrics() }
     }
@@ -411,7 +415,7 @@ struct LyricsInfoChip: View {
         if let source = lyrics.source {
             HStack(spacing: 6) {
                 Image(systemName: "quote.bubble.fill").foregroundStyle(model.player.palette.primary)
-                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)\(lyrics.aligned ? " \u{00B7} synced to video" : lyrics.approximate ? " \u{00B7} timing estimated" : "")")
+                Text(source == .demo ? "Sample lyrics" : "Lyrics \u{00B7} \(source.rawValue)\(lyrics.syncLabel.isEmpty ? "" : " \u{00B7} \(lyrics.syncLabel)")")
                     .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.Palette.textSecondary)
                 Divider().frame(height: 12)
@@ -423,6 +427,7 @@ struct LyricsInfoChip: View {
                     .onTapGesture { lyrics.offset = 0 }
                 Button { lyrics.offset += 0.25 } label: { Image(systemName: "plus") }
                     .help("Show lyrics later")
+                LyricsDetailsButton()
             }
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
@@ -490,3 +495,72 @@ struct FlowLayout: Layout {
         return rows
     }
 }
+
+/// "i" button on the lyrics chip: what Encore found, how it synced the lyrics,
+/// and a Copy button so problems can be reported precisely.
+private struct LyricsDetailsButton: View {
+    @Environment(AppModel.self) private var model
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Image(systemName: listeningIcon)
+                .symbolEffect(.pulse, isActive: isListening)
+        }
+        .help("Lyrics details")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            LyricsDetailsView().environment(model)
+        }
+    }
+
+    private var isListening: Bool { if case .listening = model.lyrics.listening { return true }; return false }
+    private var listeningIcon: String { isListening ? "ear" : "info.circle" }
+}
+
+private struct LyricsDetailsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var copied = false
+
+    var body: some View {
+        let lyrics = model.lyrics
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Lyrics details").font(Theme.Fonts.title(14))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(lyrics.details.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+            if lyrics.listening == .needsPermission {
+                Text("Turn on Speech Recognition for Encore so it can line the lyrics up by listening (it all happens on your Mac).")
+                    .font(Theme.Fonts.body(12))
+                    .foregroundStyle(Theme.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Privacy Settings\u{2026}") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+            HStack {
+                Button(copied ? "Copied" : "Copy Details") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(lyrics.detailsText, forType: .string)
+                    copied = true
+                }
+                Button("Search Again") { lyrics.retry() }
+                Spacer()
+            }
+        }
+        .padding(14)
+        .frame(width: 440)
+        .preferredColorScheme(.dark)
+    }
+}
+

@@ -63,6 +63,7 @@ jobs:
           NOW=$(date +%s)
           for DB in "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "/Library/Application Support/com.apple.TCC/TCC.db"; do
             sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, indirect_object_code_identity, flags, last_modified) VALUES ('kTCCServiceAudioCapture','app.encore.player',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$NOW);" 2>&1 | head -2
+            sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier, indirect_object_code_identity, flags, last_modified) VALUES ('kTCCServiceSpeechRecognition','app.encore.player',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$NOW);" 2>&1 | head -2
           done
           system_profiler SPAudioDataType 2>/dev/null | head -20
           open --stdout "$SHOTS/run.log" --stderr "$SHOTS/run.log" -a "$PWD/dist/Encore.app" --args \
@@ -72,7 +73,7 @@ jobs:
             pgrep -x Encore >/dev/null || { echo "❌ Encore exited early"; break; }
             sleep 2
           done
-          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|TAP|LYRICS|rror" "$SHOTS/run.log" | head -100
+          grep -E "STATE|SNAPSHOT|WINDOW|WINLIST|PAGE|TAP|LYRICS|LISTEN|rror" "$SHOTS/run.log" | head -100
           pgrep -x Encore >/dev/null && echo "✅ Encore still running"
           pkill -x Encore; sleep 1; pkill -9 -x Encore
           for f in "$SHOTS"/*.png; do

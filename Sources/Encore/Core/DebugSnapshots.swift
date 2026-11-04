@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ImageIO
 import ScreenCaptureKit
+import Speech
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -167,18 +168,87 @@ enum DebugSnapshots {
                 fake.append(.init(time: w.start + 7.5 + (j % 2 == 0 ? 0.2 : -0.15), text: w.text))
             }
         }
-        if let aligned = LyricsAligner.align(demo, to: fake, reestimate: false) {
+        if let aligned = LyricsAligner.align(demo, to: fake, reestimate: false)?.lines {
             let shifts = zip(aligned, demo).filter { !$0.1.text.isEmpty }.map { $0.0.start - $0.1.start }
             print("LYRICSTEST aligner recovered shift \(String(format: "%.2f", shifts.sorted()[shifts.count / 2]))s (expected 7.5)")
         } else {
             print("LYRICSTEST aligner found no alignment")
         }
+        await listenerSelfTest()
         let roman = "Hum tere bin ab reh nahi sakte".split(separator: " ").map { LyricsAligner.skeleton(String($0)) }
         let deva = "\u{0939}\u{092E} \u{0924}\u{0947}\u{0930}\u{0947} \u{092C}\u{093F}\u{0928} \u{0905}\u{092C} \u{0930}\u{0939} \u{0928}\u{0939}\u{0940}\u{0902} \u{0938}\u{0915}\u{0924}\u{0947}".split(separator: " ").map { LyricsAligner.skeleton(String($0)) }
         print("LYRICSTEST skeleton roman=\(roman) devanagari=\(deva) match=\(roman == deva)")
         let parsed = LRC.parse(LyricsService.demoLRC)
         print("LYRICSTEST demo parsed \(parsed.count) lines; words in line 1: \(parsed.first(where: { !$0.text.isEmpty })?.words.count ?? 0)")
         fflush(stdout)
+    }
+
+    /// Align-by-ear check: a synthesised voice reads the demo lyrics 7.5 s late;
+    /// on-device recognition must hear them and the aligner recover the shift.
+    private static func listenerSelfTest() async {
+        let demo = LRC.parse(LyricsService.demoLRC)
+        print("LISTENTEST speech authorization: \(LyricsListener.authorization.rawValue)")
+        guard LyricsListener.authorization == .authorized else { return }
+        guard let recognizer = LyricsListener.recognizer(for: demo) else {
+            print("LISTENTEST no on-device recogniser available")
+            return
+        }
+        let rate = 22_050.0
+        var audio = [Float](repeating: 0, count: Int(rate * 50))
+        let synth = AVSpeechSynthesizer()
+        for line in demo where !line.text.isEmpty {
+            let samples = await speak(line.text, with: synth, rate: rate)
+            let at = Int((line.start + 7.5) * rate)
+            for (i, v) in samples.enumerated() where at + i < audio.count { audio[at + i] += v }
+        }
+        let listener = LyricsListener()
+        var heard: [LyricsAligner.Word] = []
+        listener.onWords = { heard += $0 }
+        listener.start(recognizer: recognizer, videoTime: 0)
+        try? await Task.sleep(for: .milliseconds(300))
+        let step = 2048
+        var i = 0
+        while i < audio.count {
+            let n = min(step, audio.count - i)
+            audio.withUnsafeBufferPointer { listener.feed(UnsafeBufferPointer(rebasing: $0[i..<(i + n)]), sampleRate: rate) }
+            i += n
+            if i % (step * 40) == 0 { try? await Task.sleep(for: .milliseconds(20)) }
+        }
+        listener.flush()
+        try? await Task.sleep(for: .seconds(8))
+        print("LISTENTEST locale=\(recognizer.locale.identifier) heard \(heard.count) words: \(heard.prefix(8).map { "\($0.text)@\(String(format: "%.1f", $0.time))" }.joined(separator: " "))")
+        if let r = LyricsAligner.align(demo, to: heard, reestimate: false) {
+            print("LISTENTEST aligned by ear: shift \(String(format: "%.2f", r.shiftAtStart)) s (expected 7.5), \(r.anchors) anchors")
+        } else {
+            print("LISTENTEST could not align from what was heard")
+        }
+        listener.stop()
+    }
+
+    private static func speak(_ text: String, with synth: AVSpeechSynthesizer, rate: Double) async -> [Float] {
+        await withCheckedContinuation { (cont: CheckedContinuation<[Float], Never>) in
+            var out: [Float] = []
+            var done = false
+            let utterance = AVSpeechUtterance(string: text)
+            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+            synth.write(utterance) { buffer in
+                guard !done else { return }
+                guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else {
+                    done = true
+                    cont.resume(returning: out)
+                    return
+                }
+                let n = Int(pcm.frameLength)
+                let step = pcm.format.sampleRate / rate
+                if let f = pcm.floatChannelData?[0] {
+                    var x = 0.0
+                    while Int(x) < n { out.append(f[Int(x)]); x += step }
+                } else if let s16 = pcm.int16ChannelData?[0] {
+                    var x = 0.0
+                    while Int(x) < n { out.append(Float(s16[Int(x)]) / 32768); x += step }
+                }
+            }
+        }
     }
 
     /// CI displays are small; a window larger than the screen cannot be captured.

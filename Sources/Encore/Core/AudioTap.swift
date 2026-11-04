@@ -26,6 +26,14 @@ final class AudioTap: @unchecked Sendable {
     var onFrame: (([UInt8], UInt8) -> Void)?
     /// Called on the main queue when the status changes.
     var onStatus: ((Status) -> Void)?
+    /// Receives the mono mix on the audio thread (used to align lyrics by ear).
+    /// Set and cleared from any thread; reads are guarded by `lock`.
+    var sampleSink: ((UnsafeBufferPointer<Float>, Double) -> Void)? {
+        get { os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }; return _sampleSink }
+        set { os_unfair_lock_lock(&lock); _sampleSink = newValue; os_unfair_lock_unlock(&lock) }
+    }
+    private var _sampleSink: ((UnsafeBufferPointer<Float>, Double) -> Void)?
+    private var monoScratch = [Float](repeating: 0, count: 4096)
 
     static let bandCount = 56
 
@@ -182,25 +190,35 @@ final class AudioTap: @unchecked Sendable {
         guard let first = buffers.first, let data = first.mData else { return }
         let floats = data.assumingMemoryBound(to: Float.self)
         os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
+        let sink = _sampleSink
+        var frames = 0
         if interleaved {
-            let frames = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * channels)
+            frames = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * channels)
+            if monoScratch.count < frames { monoScratch = [Float](repeating: 0, count: frames) }
             for f in 0..<frames {
                 var s: Float = 0
                 for c in 0..<channels { s += floats[f * channels + c] }
-                ring[ringWrite] = s / Float(channels)
+                let m = s / Float(channels)
+                ring[ringWrite] = m
+                monoScratch[f] = m
                 ringWrite = (ringWrite + 1) & (ring.count - 1)
             }
-            samplesSinceRead += frames
         } else {
-            let frames = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+            frames = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+            if monoScratch.count < frames { monoScratch = [Float](repeating: 0, count: frames) }
             let second = buffers.count > 1 ? buffers[1].mData?.assumingMemoryBound(to: Float.self) : nil
             for f in 0..<frames {
                 let s = second.map { (floats[f] + $0[f]) * 0.5 } ?? floats[f]
                 ring[ringWrite] = s
+                monoScratch[f] = s
                 ringWrite = (ringWrite + 1) & (ring.count - 1)
             }
-            samplesSinceRead += frames
+        }
+        samplesSinceRead += frames
+        let rate = sampleRate
+        os_unfair_lock_unlock(&lock)
+        if let sink, frames > 0 {
+            monoScratch.withUnsafeBufferPointer { sink(UnsafeBufferPointer(rebasing: $0[0..<frames]), rate) }
         }
     }
 

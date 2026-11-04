@@ -15,7 +15,9 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("WebKit"),
                 .linkedFramework("MediaPlayer"),
-                .linkedFramework("SwiftUI")
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("Speech"),
+                .linkedFramework("AVFoundation")
             ]
         )
     ]
