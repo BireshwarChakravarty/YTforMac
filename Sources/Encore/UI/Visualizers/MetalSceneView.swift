@@ -158,6 +158,28 @@ final class MetalContext {
         }
     }
 
+    /// Night Drive's painted Creta: exterior, road, cabin and two mask images
+    /// (bound at texture slots 3...7). Nil if they aren't bundled.
+    private(set) lazy var nightDrive: [MTLTexture]? = {
+        guard let loader = textureLoader else { return nil }
+        let names = ["drive-base.jpg", "drive-road.jpg", "drive-cabin.jpg", "drive-masks.png", "drive-masks2.png"]
+        var textures: [MTLTexture] = []
+        for name in names {
+            let parts = name.split(separator: ".")
+            guard let url = Bundle.main.url(forResource: String(parts[0]), withExtension: String(parts[1])),
+                  let texture = try? loader.newTexture(URL: url, options: [
+                      .SRGB: false, .origin: MTKTextureLoader.Origin.topLeft,
+                      .textureUsage: MTLTextureUsage.shaderRead.rawValue,
+                      .textureStorageMode: MTLStorageMode.private.rawValue,
+                  ]) else {
+                NSLog("Encore: Night Drive texture \(name) missing")
+                return nil
+            }
+            textures.append(texture)
+        }
+        return textures
+    }()
+
     func makeTarget(width: Int, height: Int) -> MTLTexture? {
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: Self.hdrFormat, width: max(1, width), height: max(1, height), mipmapped: false)
         d.usage = [.renderTarget, .shaderRead]
@@ -374,6 +396,8 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         u.scroll = scroll
         u.dpr = Float(size.width / max(1, view.bounds.width))
         u.p0 = colors.0; u.p1 = colors.1; u.p2 = colors.2; u.shadow = colors.3
+        let paintedDrive = scene == .drive ? ctx.nightDrive : nil
+        if paintedDrive != nil { u.pad1 = 1 }   // driveFragment: use the painted Creta
 
         let cfg = scene.config
         let art = artTexture ?? fallbackArt
@@ -384,6 +408,9 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             enc.setFragmentTexture(specTexture, index: 0)
             enc.setFragmentTexture(histTexture, index: 1)
             enc.setFragmentTexture(art, index: 2)
+            if let paintedDrive {
+                for (i, texture) in paintedDrive.enumerated() { enc.setFragmentTexture(texture, index: 3 + i) }
+            }
             for name in [cfg.fragment, cfg.background].compactMap({ $0 }) {
                 if let pso = ctx.pipeline(vertex: "quadVertex", fragment: name, additive: false, format: MetalContext.hdrFormat) {
                     enc.setRenderPipelineState(pso)

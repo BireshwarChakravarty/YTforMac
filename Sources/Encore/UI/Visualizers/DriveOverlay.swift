@@ -6,7 +6,34 @@ struct DriveOverlay: View {
     var compact = false
 
     var body: some View {
-        CabinScreensOverlay()
+        if Bundle.main.url(forResource: "drive-cabin", withExtension: "jpg") != nil {
+            PaintedScreensOverlay()
+        } else {
+            CabinScreensOverlay()
+        }
+    }
+}
+
+/// The song and speed placed on the painted Creta's screens. The painting
+/// (1920x1080) covers the view centred, exactly as in `pdScene`.
+private struct PaintedScreensOverlay: View {
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            let s = max(w / 1920, h / 1080)
+            let ox = (w - 1920 * s) / 2, oy = (h - 1080 * s) / 2
+            let info = CGRect(x: ox + 700 * s, y: oy + 438 * s, width: 390 * s, height: 56 * s)
+            let speed = CGRect(x: ox + 1332 * s, y: oy + 454 * s, width: 92 * s, height: 72 * s)
+            ZStack {
+                InfotainmentText()
+                    .frame(width: info.width, height: info.height)
+                    .position(x: info.midX, y: info.midY)
+                ClusterSpeed()
+                    .frame(width: speed.width, height: speed.height)
+                    .position(x: speed.midX, y: speed.midY)
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 

@@ -1241,10 +1241,157 @@ static float4 lofiScene(float2 fc, constant Uniforms &u, texture2d<float> specTe
     return float4(col, 1.0);
 }
 
+// ================================================================ Night Drive (painted Creta)
+// Built from a layered painting of a 2024-25 Creta at night (Resources/NightDrive):
+// the exterior painting, the road layer, the cabin, and masks for the lake,
+// leaves, sky, glass and road. Brought to life with gentle, layer-aware motion:
+// the road streams towards you, leaves stir, the lake ripples, mist drifts,
+// clouds breathe, stars twinkle, lamps pulse with the music, rain falls and
+// wipers sweep; passing light washes over the dash and the screens show the
+// song and speed. All maths is in the painting's pixel space (1920x1080).
+
+#define PD_W 1920.0
+#define PD_H 1080.0
+
+static float3 pdUntonemap(float3 v) {
+    float3 y = clamp(pow(clamp(v, 0.0, 1.0), float3(1.12)), 0.0, 0.975);
+    float3 a = 2.51 - 2.43 * y;
+    float3 b = 0.03 - 0.59 * y;
+    float3 c = -0.14 * y;
+    return (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
+}
+
+static float3 pdExterior(float2 ip, float t, constant Uniforms &u,
+                         texture2d<float> base, texture2d<float> road, texture2d<float> masks, texture2d<float> masks2) {
+    float2 sz = float2(PD_W, PD_H);
+    float4 m = masks.sample(linearSampler, ip / sz);            // r lake, g leaves, b sky
+    float2 q = ip;
+    // the car moving: a gentle sway and road vibration against the cabin
+    q += float2(1.8 * sin(t * 0.7), 1.0 * sin(t * 5.3) * (0.4 + u.bass) + 0.8 * sin(t * 1.3));
+    // leaves stirring in the wind
+    float lean = clamp(1.0 - ip.y / 420.0, 0.0, 1.0);
+    q.x += m.g * (1.3 * sin(t * 1.1 + ip.y * 0.03) + 0.7 * sin(t * 1.9 + ip.x * 0.045)) * lean;
+    q.y += m.g * 0.6 * sin(t * 1.4 + ip.x * 0.04) * lean;
+    // clouds breathing
+    q.x += m.b * 2.2 * sin(ip.y * 0.022 + t * 0.12);
+    // the lake rippling
+    float depth = clamp((ip.y - 330.0) / 80.0, 0.0, 1.0);
+    q += m.r * float2(1.6 * sin(ip.y * 0.75 + t * 2.2) * (0.4 + depth), 0.6 * sin(ip.x * 0.04 - t * 1.4));
+    float3 col = base.sample(linearSampler, q / sz).rgb;
+    // the road streaming towards the vanishing point (two crossfaded copies)
+    float2 vp = float2(643.0, 351.0);
+    float3 rr = float3(0.0);
+    float ra = 0.0;
+    for (int k = 0; k < 2; k++) {
+        float ph = fract(t / 2.4 + float(k) * 0.5);
+        float sc = exp(0.07 * ph);
+        float w = 0.5 - 0.5 * cos(6.2831853 * ph);
+        float2 rq = vp + (q - vp) / sc;
+        float a = masks2.sample(linearSampler, rq / sz).g;
+        rr += road.sample(linearSampler, rq / sz).rgb * a * w;
+        ra += a * w;
+    }
+    col = col * (1.0 - ra) + rr;
+    // wet sheen sliding along the road
+    float roadHere = masks2.sample(linearSampler, ip / sz).g;
+    float v = clamp((412.0 - ip.y) / 60.0, 0.0, 1.0);
+    float z = 1.0 / (v * 0.95 + 0.05);
+    col += float3(1.0, 0.75, 0.45) * pow(0.5 + 0.5 * sin(z * 2.0 + t * 6.0), 8.0) * (1.0 - v) * roadHere * 0.07;
+    // stars twinkling
+    float lum = dot(col, float3(0.2126, 0.7152, 0.0722));
+    col *= 1.0 + m.b * smoothstep(0.45, 0.8, lum) * 0.5 * sin(t * 3.0 + hash2(floor(ip / 4.0)) * 30.0);
+    // moonlight breathing
+    float md = length(ip - float2(1504.0, 92.0));
+    col += float3(0.9, 0.85, 0.7) * exp(-md / 70.0) * 0.06 * (1.0 + 0.5 * sin(t * 0.6));
+    // mist drifting through the hills and over the water
+    float zone = smoothstep(200.0, 260.0, ip.y) * (1.0 - smoothstep(330.0, 360.0, ip.y)) * smoothstep(760.0, 900.0, ip.x);
+    float n = fbm3(float2(ip.x * 0.005 - t * 0.015, ip.y * 0.018));
+    col = mix(col, float3(0.5, 0.56, 0.75), zone * smoothstep(0.5, 0.8, n) * 0.18);
+    // back to HDR, then the warm lamps pulse with the music
+    float3 hdr = pdUntonemap(col);
+    float warmGlow = smoothstep(0.6, 0.9, lum) * smoothstep(0.1, 0.3, col.r - col.b);
+    hdr *= 1.0 + warmGlow * (0.35 * u.bass + 0.45 * u.beat);
+    return hdr;
+}
+
+static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
+                      texture2d<float> base, texture2d<float> road, texture2d<float> cabin,
+                      texture2d<float> masks, texture2d<float> masks2) {
+    float2 sz = float2(PD_W, PD_H);
+    float s = max(u.res.x / PD_W, u.res.y / PD_H);
+    float2 o = (u.res - sz * s) * 0.5;
+    float2 ip = float2(fc.x - o.x, (u.res.y - fc.y) - o.y) / s;     // painting pixels, y down
+    float2 p = float2(ip.x - PD_W * 0.5, PD_H * 0.5 - ip.y) / PD_H;  // height units, y up
+    float t = u.time;
+    float px = 1.0 / (PD_H * s);
+    // rain on the glass and the wipers (pivots at the foot of the windshield)
+    float blade;
+    float2 wp = p - float2(0.06, 0.215);
+    float since = drvWipe(wp, t, blade);
+    float3 r = driveRain(wp, t, since);
+    float2 refr = float2(r.x, -r.y) * PD_H;
+    float3 view = pdExterior(ip + refr * 2.5, t, u, base, road, masks, masks2);
+    if (r.z > 0.01) {
+        float3 sharp = pdExterior(ip - refr * 5.0, t, u, base, road, masks, masks2);
+        view = mix(view, sharp * 1.12 + 0.02, r.z * 0.75);
+    }
+    view *= 0.93 + 0.07 * (1.0 - r.z);
+    // rain falling through the night
+    float2 rg = float2(p.x * 95.0 + p.y * 16.0, p.y * 6.0 + t * 7.5);
+    float rh = hash1(floor(rg.x) * 1.31);
+    float ry = fract(rg.y + rh * 13.0);
+    float streak = (1.0 - smoothstep(0.0, 0.12, abs(fract(rg.x) - 0.5))) * smoothstep(0.0, 0.1, ry) * (1.0 - smoothstep(0.1, 0.32, ry)) * step(0.55, rh);
+    view += float3(0.8, 0.85, 1.0) * streak * 0.05;
+    view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
+
+    // the painted cabin
+    float glass = 1.0 - masks2.sample(linearSampler, ip / sz).r;
+    float3 cab = pdUntonemap(cabin.sample(linearSampler, ip / sz).rgb);
+    // light from lamps going by washes over the cabin from the left
+    float pass = pow(0.5 + 0.5 * sin(t * 1.3 - 1.0), 10.0) * (1.0 + 0.4 * u.bass);
+    float fromLeft = smoothstep(0.8, -0.7, p.x) * smoothstep(-0.45, 0.2, p.y);
+    float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.45 * fromLeft);
+    // infotainment: the song's LED bars (title drawn natively above them)
+    float2 sMin = float2(682.0, 428.0);
+    float2 sMax = float2(1106.0, 556.0);
+    float2 sc = (sMin + sMax) * 0.5;
+    float2 sh = (sMax - sMin) * 0.5;
+    float scr = sdBox(ip - sc, sh, 10.0);
+    if (scr < 1.0) {
+        float2 q = (ip - sc) / sh;
+        q.y = -q.y;
+        float3 sbg = mix(float3(0.02, 0.035, 0.09), float3(0.06, 0.05, 0.12), q.y * 0.5 + 0.5);
+        sbg += u.p1.rgb * 0.05 * (1.0 - length(q * float2(0.6, 1.0)));
+        float bars = 26.0;
+        float bx = (q.x * 0.5 + 0.5) * bars;
+        float v = spec(specTex, floor(bx) / bars * 0.9);
+        float barTop = -0.92 + v * 0.85;
+        float colBar = step(0.2, fract(bx)) * step(fract(bx), 0.8) * step(-0.92, q.y);
+        float3 barCol = mix(float3(0.3, 0.9, 1.0), u.p0.rgb, smoothstep(-0.9, -0.1, q.y));
+        sbg += barCol * colBar * step(q.y, barTop) * 0.9 + barCol * colBar * exp(-max(q.y - barTop, 0.0) * 25.0) * 0.1;
+        lit = mix(lit, sbg * 1.25, 1.0 - smoothstep(-1.0, 1.0, scr));
+    }
+    // a clean panel between the dials for the live speed (drawn natively)
+    float cpanel = sdBox(ip - float2(1378.0, 490.0), float2(50.0, 40.0), 12.0);
+    lit = mix(lit, float3(0.01, 0.018, 0.04), (1.0 - smoothstep(-3.0, 3.0, cpanel)) * 0.96);
+    lit *= 1.0 + 0.06 * u.beat * smoothstep(80.0, 0.0, abs(ip.y - 490.0));       // screens breathe on the beat
+    float3 col = mix(lit, view, glass);
+    float outside = min(step(ip.x, 0.0) + step(PD_W, ip.x) + step(ip.y, 0.0) + step(PD_H, ip.y), 1.0);
+    col = mix(col, float3(0.012, 0.013, 0.02), outside);
+    return float4(col, 1.0);
+}
+
 fragment float4 driveFragment(QuadOut in [[stage_in]],
-                            constant Uniforms &u [[buffer(0)]],
-                            texture2d<float> specTex [[texture(0)]]) {
-    return lofiScene(fragCoord(in.position, u), u, specTex);
+                              constant Uniforms &u [[buffer(0)]],
+                              texture2d<float> specTex [[texture(0)]],
+                              texture2d<float> base [[texture(3)]],
+                              texture2d<float> road [[texture(4)]],
+                              texture2d<float> cabin [[texture(5)]],
+                              texture2d<float> masks [[texture(6)]],
+                              texture2d<float> masks2 [[texture(7)]]) {
+    float2 fc = fragCoord(in.position, u);
+    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, base, road, cabin, masks, masks2);
+    return lofiScene(fc, u, specTex);
 }
 
 """#
