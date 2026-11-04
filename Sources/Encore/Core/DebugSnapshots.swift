@@ -36,10 +36,8 @@ enum DebugSnapshots {
                 try? await Task.sleep(for: .seconds(3.5))
                 await captureMain(dir, "2-audio-\(style.rawValue)")
                 if style == .drive {
-                    print("DRIVE footage available=\(DriveFootage.shared.isAvailable) loop=\(String(format: "%.2f", DriveFootage.shared.loopTime))s")
-                    // The clip's wipers sweep about 9 s into each loop.
-                    try? await Task.sleep(for: .seconds(5.6))
-                    print("DRIVE footage loop=\(String(format: "%.2f", DriveFootage.shared.loopTime))s")
+                    // The wipers sweep at the start of every 7 s cycle.
+                    try? await Task.sleep(for: .seconds(3.6))
                     await captureMain(dir, "2-audio-drive-wipers")
                 }
             }

@@ -221,7 +221,6 @@ struct MetalSceneView: NSViewRepresentable {
     static func dismantleNSView(_ view: MTKView, coordinator: SceneRenderer) {
         view.isPaused = true
         view.delegate = nil
-        coordinator.stopFootage()
     }
 }
 
@@ -275,16 +274,8 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         targetColors = colors
     }
 
-    private var usingFootage = false
-
     func configure(scene: MetalScene, palette: ArtworkPalette, artwork: NSImage?) {
         if scene != self.scene { self.scene = scene; needsClear = true }
-        if (scene == .drive) != usingFootage {
-            usingFootage = scene == .drive
-            MainActor.assumeIsolated {
-                if usingFootage { DriveFootage.shared.retain() } else { DriveFootage.shared.release() }
-            }
-        }
         if palette != self.palette {
             self.palette = palette
             targetColors = Self.vectors(palette)
@@ -301,12 +292,6 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
-    }
-
-    func stopFootage() {
-        guard usingFootage else { return }
-        usingFootage = false
-        MainActor.assumeIsolated { DriveFootage.shared.release() }
     }
 
     private static func vectors(_ p: ArtworkPalette) -> (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) {
@@ -411,14 +396,8 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         u.scroll = scroll
         u.dpr = Float(size.width / max(1, view.bounds.width))
         u.p0 = colors.0; u.p1 = colors.1; u.p2 = colors.2; u.shadow = colors.3
-        // Night Drive: the painted cabin over the looping world outside. pad1 tells
-        // the shader both are there (>= 1) and where the loop is (pad1 - 1 seconds).
-        var paintedDrive: [MTLTexture]?
-        if scene == .drive, let cabin = ctx.nightDrive, let device = ctx.device,
-           let world = DriveFootage.shared.frame(device: device) {
-            paintedDrive = cabin + [world]
-            u.pad1 = 1 + Float(DriveFootage.shared.loopTime)
-        }
+        let paintedDrive = scene == .drive ? ctx.nightDrive : nil
+        if paintedDrive != nil { u.pad1 = 1 }   // driveFragment: the painted Creta and its world
 
         let cfg = scene.config
         let art = artTexture ?? fallbackArt
