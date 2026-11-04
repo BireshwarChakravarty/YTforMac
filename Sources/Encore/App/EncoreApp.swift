@@ -76,6 +76,22 @@ struct EncoreCommands: Commands {
                     Button(r == 1 ? "Normal" : "\(r.formatted())×") { model.player.setRate(r) }
                 }
             }
+            Divider()
+            Button("Next Chapter") { model.extras.nextChapter() }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
+                .disabled(model.extras.chapters.isEmpty)
+            Button("Previous Chapter") { model.extras.previousChapter() }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
+                .disabled(model.extras.chapters.isEmpty)
+            Menu("Sleep Timer") {
+                ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+                    Button("In \(m) Minutes") { model.extras.setSleep(minutes: m) }
+                }
+                Button("At the End of This Video") { model.extras.setSleepAtEndOfVideo() }
+                Divider()
+                Button("Turn Off") { model.extras.setSleep(minutes: nil) }
+                    .disabled(model.extras.sleep == .off)
+            }
         }
 
         CommandGroup(after: .toolbar) {

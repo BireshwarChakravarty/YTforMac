@@ -202,6 +202,21 @@ final class PlayerEngine: NSObject {
 
     func setRate(_ value: Double) { run("window.__encore && window.__encore.setRate(\(value))") }
 
+    /// The current video's description (for chapters), once YouTube has it for this video.
+    func videoDescription() async -> String? {
+        let id = videoId
+        let js = """
+        (() => { try { const p = document.getElementById('movie_player');
+          const r = p && p.getPlayerResponse && p.getPlayerResponse();
+          if (r && r.videoDetails && r.videoDetails.videoId === '\(id)') return r.videoDetails.shortDescription || ''; } catch (e) {}
+          return '__pending__'; })()
+        """
+        let result: String? = await withCheckedContinuation { cont in
+            webView.evaluateJavaScript(js) { value, _ in cont.resume(returning: value as? String) }
+        }
+        return result == "__pending__" ? nil : result
+    }
+
     /// Remote commands can arrive twice for one key press (once through
     /// `MPRemoteCommandCenter`, once through WebKit's media session). Collapse
     /// them so a press always acts exactly once.

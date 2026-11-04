@@ -34,6 +34,8 @@ struct NowPlayingView: View {
                         AudioSourceBadge()
                         if model.settings.visualizerStyle.isLyrics { LyricsInfoChip() }
                         Spacer()
+                        SleepChip()
+                        ChaptersChip()
                         UpNextChip()
                     }
                     .padding(18)
@@ -337,6 +339,83 @@ struct EncoreMark: View {
                                                                 startPoint: p(460, 400), endPoint: p(630, 610))
             ctx.fill(play, with: white)
             ctx.stroke(play, with: white, style: StrokeStyle(lineWidth: 26 * s, lineJoin: .round))
+        }
+    }
+}
+
+/// The current chapter; opens the full list to jump around.
+struct ChaptersChip: View {
+    @Environment(AppModel.self) private var model
+    @State private var showing = false
+
+    var body: some View {
+        let extras = model.extras
+        if !extras.chapters.isEmpty {
+            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                let now = model.player.position(at: tl.date)
+                let current = extras.currentChapter(at: now)
+                Button { showing.toggle() } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "list.bullet.rectangle").foregroundStyle(model.player.palette.primary)
+                        Text(current?.title ?? "Chapters").font(Theme.Fonts.title(12)).lineLimit(1)
+                            .frame(maxWidth: 220, alignment: .leading)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .encoreGlass(cornerRadius: 12)
+                }
+                .buttonStyle(.plain)
+                .help("Chapters (Shift-Command-arrows to move between them)")
+                .popover(isPresented: $showing, arrowEdge: .bottom) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(extras.chapters) { c in
+                                Button { extras.seek(to: c); showing = false } label: {
+                                    HStack(spacing: 10) {
+                                        Text(PlaybackExtras.clock(c.start)).monospacedDigit().foregroundStyle(.secondary)
+                                            .frame(width: 58, alignment: .trailing)
+                                        Text(c.title).lineLimit(2).multilineTextAlignment(.leading)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .font(.system(size: 13, weight: c == current ? .semibold : .regular))
+                                    .padding(.vertical, 6).padding(.horizontal, 10)
+                                    .background(c == current ? model.player.palette.primary.opacity(0.18) : .clear,
+                                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(width: 340, height: min(420, CGFloat(extras.chapters.count) * 34 + 20))
+                }
+            }
+        }
+    }
+}
+
+/// The sleep timer's countdown; click to turn it off.
+struct SleepChip: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let extras = model.extras
+        if extras.sleep != .off {
+            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                Button { extras.setSleep(minutes: nil) } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "moon.zzz.fill").foregroundStyle(Theme.Palette.violet)
+                        Text(extras.sleepRemaining(now: tl.date).map { PlaybackExtras.clock($0) } ?? "End of video")
+                            .font(Theme.Fonts.title(12)).monospacedDigit()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .encoreGlass(cornerRadius: 12)
+                }
+                .buttonStyle(.plain)
+                .help("Sleep timer: click to turn off")
+            }
         }
     }
 }

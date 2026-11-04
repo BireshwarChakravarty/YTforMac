@@ -16,6 +16,8 @@ final class AppModel {
     @ObservationIgnored let audioTap = AudioTap()
     @ObservationIgnored private var visualizerOnScreen = false
     @ObservationIgnored private(set) var nowPlaying: NowPlayingCenter!
+    /// SponsorBlock, chapters, the sleep timer, resume and notifications.
+    let extras: PlaybackExtras
 
     /// The selected sidebar destination in the main window.
     var destination: Destination = .home
@@ -31,6 +33,7 @@ final class AppModel {
 
     private init() {
         player = PlayerEngine(settings: AppSettings.shared)
+        extras = PlaybackExtras(player: player, settings: AppSettings.shared)
         browser = BrowserEngine(settings: AppSettings.shared)
         nowPlaying = NowPlayingCenter(player: player)
         lyrics.player = player
@@ -42,9 +45,13 @@ final class AppModel {
         player.onStateChange = { [weak self] in
             guard let self else { return }
             self.nowPlaying.update()
+            self.extras.update()
             self.visualizer.isPlaying = self.player.isPlaying
             self.audioTap.setPlaying(self.player.isPlaying)
             if self.settings.visualizerStyle.isLyrics { self.refreshLyrics() }
+        }
+        extras.toast = { [weak self] text, symbol, title, action in
+            self?.showToast(text, symbol: symbol, actionTitle: title, action: action)
         }
         player.onVisualizerDemand = { [weak self] onScreen in
             self?.visualizerOnScreen = onScreen
@@ -221,13 +228,18 @@ final class AppModel {
         let id = UUID()
         let text: String
         let symbol: String
+        var actionTitle: String? = nil
+        var action: (() -> Void)? = nil
+        static func == (a: Toast, b: Toast) -> Bool { a.id == b.id }
     }
 
-    func showToast(_ text: String, symbol: String) {
+    func showToast(_ text: String, symbol: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         toastTask?.cancel()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { toast = Toast(text: text, symbol: symbol) }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            toast = Toast(text: text, symbol: symbol, actionTitle: actionTitle, action: action)
+        }
         toastTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.8))
+            try? await Task.sleep(for: .seconds(action == nil ? 1.8 : 4.5))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) { self?.toast = nil }
         }

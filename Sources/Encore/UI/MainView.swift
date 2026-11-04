@@ -152,6 +152,16 @@ struct ToastView: View {
             HStack(spacing: 8) {
                 Image(systemName: toast.symbol).foregroundStyle(Theme.Palette.magenta)
                 Text(toast.text).font(Theme.Fonts.title(13))
+                if let title = toast.actionTitle, let action = toast.action {
+                    Button(title) {
+                        action()
+                        withAnimation(.easeOut(duration: 0.25)) { model.toast = nil }
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.Fonts.title(13))
+                    .foregroundStyle(Theme.Palette.magenta)
+                    .padding(.leading, 4)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 9)

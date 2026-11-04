@@ -147,6 +147,10 @@ final class AppSettings {
     var showTitleInMenuBar: Bool { didSet { save(showTitleInMenuBar, "showTitleInMenuBar") } }
     var hideDockIconWhenClosed: Bool { didSet { save(hideDockIconWhenClosed, "hideDockIconWhenClosed") } }
     var skipInterval: Double { didSet { save(skipInterval, "skipInterval") } }
+    var sponsorBlock: Bool { didSet { save(sponsorBlock, "sponsorBlock") } }
+    var sponsorCategories: [String] { didSet { save(sponsorCategories, "sponsorCategories") } }
+    var resumeLongVideos: Bool { didSet { save(resumeLongVideos, "resumeLongVideos") } }
+    var notifyTrackChanges: Bool { didSet { save(notifyTrackChanges, "notifyTrackChanges") } }
 
     // Session restore (not shown in Settings).
     var lastURL: String? { didSet { save(lastURL, "lastURL") } }
@@ -181,6 +185,10 @@ final class AppSettings {
         showTitleInMenuBar = bool("showTitleInMenuBar", false)
         hideDockIconWhenClosed = bool("hideDockIconWhenClosed", false)
         skipInterval = double("skipInterval", 10)
+        sponsorBlock = bool("sponsorBlock", true)
+        sponsorCategories = defaults.stringArray(forKey: "sponsorCategories") ?? ["sponsor", "selfpromo", "interaction", "music_offtopic"]
+        resumeLongVideos = bool("resumeLongVideos", true)
+        notifyTrackChanges = bool("notifyTrackChanges", false)
         lastURL = defaults.string(forKey: "lastURL")
         lastPosition = double("lastPosition", 0)
         lastVolume = double("lastVolume", 100)

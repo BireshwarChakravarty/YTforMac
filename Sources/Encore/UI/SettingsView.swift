@@ -72,6 +72,25 @@ private struct PlaybackSettings: View {
                 Text("15 seconds").tag(15.0)
                 Text("30 seconds").tag(30.0)
             }
+            Toggle("Resume long videos where you left off", isOn: $settings.resumeLongVideos)
+            Toggle("Show a notification when the track changes in the background", isOn: $settings.notifyTrackChanges)
+            Section {
+                Toggle("Skip segments with SponsorBlock", isOn: $settings.sponsorBlock)
+                if settings.sponsorBlock {
+                    ForEach(PlaybackExtras.sponsorCategories, id: \.id) { c in
+                        Toggle(c.title, isOn: Binding(
+                            get: { settings.sponsorCategories.contains(c.id) },
+                            set: { on in
+                                if on { if !settings.sponsorCategories.contains(c.id) { settings.sponsorCategories.append(c.id) } }
+                                else { settings.sponsorCategories.removeAll { $0 == c.id } }
+                            }))
+                        .padding(.leading, 16)
+                    }
+                }
+            } footer: {
+                Text("Community-submitted segments from sponsor.ajay.app. Only a short hash of the video ID is sent.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
