@@ -531,6 +531,41 @@ fragment float4 auroraFragment(QuadOut in [[stage_in]],
 // A spiral galaxy (warm core, blue arms, pink star-forming regions) in a deep
 // starfield with nebulae.
 
+// The galaxy's glowing gas, dust lanes and bulge, ray-traced onto its disc
+// with the same camera as the stars (which `cosmosVertex` adds on top).
+static float3 cosmosDisc(float2 uv, constant Uniforms &u, texture2d<float> specTex) {
+    float ca = u.time * 0.02;
+    float3 ro = float3(sin(ca) * 1.7, 2.0 + 0.15 * sin(u.time * 0.03), cos(ca) * 1.7);
+    float3 fw = normalize(-ro), rt = normalize(cross(float3(0, 1, 0), fw)), up = cross(fw, rt);
+    float3 rd = normalize(rt * (uv.x * 2.0 / 1.7) + up * (uv.y * 2.0 / 1.7) + fw);
+    float3 c = float3(0.0);
+    // the bulge: a warm glow around the centre, seen through the disc
+    float3 oc = -ro;
+    float dc = length(cross(rd, oc));
+    c += float3(1.0, 0.78, 0.5) * (exp(-dc * dc / 0.012) * 1.1 + exp(-dc / 0.22) * 0.18) * (0.8 + 0.5 * u.bass);
+    if (rd.y < 0.0) {
+        float tp = -ro.y / rd.y;
+        float2 P = ro.xz + rd.xz * tp;
+        float r = length(P);
+        float ang = atan2(P.y, P.x);
+        float rot = u.time * 0.035 + u.phase * 0.02;
+        float phi = ang - log(max(r, 0.05)) * 2.6 + rot / pow(r + 0.2, 0.5) * 0.6;
+        float arms = pow(0.5 + 0.5 * cos(2.0 * phi), 3.0);
+        float wisp = fbm3(float2(r * 6.0, phi * 2.0)) ;
+        float fall = exp(-r * 1.25) * smoothstep(0.05, 0.3, r);
+        float3 haze = mix(float3(1.0, 0.82, 0.6), float3(0.45, 0.6, 1.0), smoothstep(0.2, 1.0, r));
+        float e = spec(specTex, clamp(r / 2.2, 0.0, 1.0) * 0.85);
+        float gas = fall * (0.25 + 1.6 * arms * (0.6 + 0.6 * wisp)) * (0.7 + 0.8 * e);
+        // dark dust lanes on the inner edge of each arm
+        float lane = pow(0.5 + 0.5 * cos(2.0 * (phi + 0.38)), 6.0) * smoothstep(0.15, 0.4, r) * (0.5 + 0.5 * fbm3(float2(r * 9.0, phi * 3.0)));
+        // pink star-forming knots along the arms
+        float knots = smoothstep(0.72, 0.9, fbm3(float2(r * 14.0, phi * 6.0))) * arms * smoothstep(0.3, 0.6, r) * (1.0 - smoothstep(1.4, 2.0, r));
+        float3 disc = haze * gas * 1.2 + float3(1.0, 0.3, 0.55) * knots * 1.6 * (0.7 + 0.6 * e);
+        c = c * (1.0 - lane * 0.85) + disc * (1.0 - lane * 0.9);
+    }
+    return c;
+}
+
 fragment float4 cosmosBackground(QuadOut in [[stage_in]],
                                  constant Uniforms &u [[buffer(0)]],
                                  texture2d<float> specTex [[texture(0)]]) {
@@ -539,9 +574,9 @@ fragment float4 cosmosBackground(QuadOut in [[stage_in]],
     float n1 = fbm3(q * 1.6 + fbm3(q * 2.3 + 4.0) * 1.2);
     float n2 = fbm3(q * 2.4 - float2(3.0, 1.0) + fbm3(q * 1.7) * 1.5);
     float3 c = float3(0.004, 0.005, 0.012);
-    c += float3(0.30, 0.08, 0.35) * pow(smoothstep(0.42, 0.85, n1), 2.0) * 0.8;
-    c += float3(0.05, 0.18, 0.40) * pow(smoothstep(0.45, 0.9, n2), 2.0) * 0.8;
-    c += float3(0.6, 0.25, 0.15) * pow(smoothstep(0.62, 1.0, n1 * n2 * 1.6), 3.0) * 0.25;
+    c += float3(0.30, 0.08, 0.35) * pow(smoothstep(0.42, 0.85, n1), 2.0) * 0.5;
+    c += float3(0.05, 0.18, 0.40) * pow(smoothstep(0.45, 0.9, n2), 2.0) * 0.5;
+    c += float3(0.6, 0.25, 0.15) * pow(smoothstep(0.62, 1.0, n1 * n2 * 1.6), 3.0) * 0.18;
     c *= 0.6 + 0.4 * smoothstep(0.3, 0.6, fbm3(q * 3.0 + 9.0));
     for (int l = 0; l < 3; l++) {
         float fl = float(l);
@@ -558,6 +593,7 @@ fragment float4 cosmosBackground(QuadOut in [[stage_in]],
             c += sc * (exp(-d * d / (size * size * 0.15)) * 2.0 + exp(-d / (size * 1.5)) * 0.15) * tw;
         }
     }
+    c += cosmosDisc(uv, u, specTex);
     return float4(c, 1.0);
 }
 
