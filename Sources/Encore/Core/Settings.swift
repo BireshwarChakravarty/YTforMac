@@ -151,6 +151,8 @@ final class AppSettings {
     var sponsorCategories: [String] { didSet { save(sponsorCategories, "sponsorCategories") } }
     var resumeLongVideos: Bool { didSet { save(resumeLongVideos, "resumeLongVideos") } }
     var notifyTrackChanges: Bool { didSet { save(notifyTrackChanges, "notifyTrackChanges") } }
+    /// Seconds of fade between one video and the next (0 = off).
+    var crossfade: Double { didSet { save(crossfade, "crossfade") } }
 
     // Session restore (not shown in Settings).
     var lastURL: String? { didSet { save(lastURL, "lastURL") } }
@@ -189,6 +191,7 @@ final class AppSettings {
         sponsorCategories = defaults.stringArray(forKey: "sponsorCategories") ?? ["sponsor", "selfpromo", "interaction", "music_offtopic"]
         resumeLongVideos = bool("resumeLongVideos", true)
         notifyTrackChanges = bool("notifyTrackChanges", false)
+        crossfade = double("crossfade", 6)
         lastURL = defaults.string(forKey: "lastURL")
         lastPosition = double("lastPosition", 0)
         lastVolume = double("lastVolume", 100)

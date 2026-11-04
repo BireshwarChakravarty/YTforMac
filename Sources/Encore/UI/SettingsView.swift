@@ -72,6 +72,12 @@ private struct PlaybackSettings: View {
                 Text("15 seconds").tag(15.0)
                 Text("30 seconds").tag(30.0)
             }
+            Picker("Crossfade between videos", selection: $settings.crossfade) {
+                Text("Off").tag(0.0)
+                Text("3 seconds").tag(3.0)
+                Text("6 seconds").tag(6.0)
+                Text("10 seconds").tag(10.0)
+            }
             Toggle("Resume long videos where you left off", isOn: $settings.resumeLongVideos)
             Toggle("Show a notification when the track changes in the background", isOn: $settings.notifyTrackChanges)
             Section {

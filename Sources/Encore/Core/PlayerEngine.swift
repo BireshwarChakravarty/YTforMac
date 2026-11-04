@@ -195,6 +195,16 @@ final class PlayerEngine: NSObject {
         run("window.__encore && window.__encore.setVolume(\(Int(volume)))")
     }
 
+    /// A fade on top of the volume (0...1) for crossfades and the sleep timer;
+    /// the page eases towards it, and the volume setting itself is untouched.
+    func setFade(_ value: Double) {
+        let v = max(0, min(1, value))
+        guard abs(v - fadeLevel) > 0.005 || (v == 1 && fadeLevel != 1) || (v == 0 && fadeLevel != 0) else { return }
+        fadeLevel = v
+        run("window.__encore && window.__encore.setFade(\(v))")
+    }
+    @ObservationIgnored private(set) var fadeLevel: Double = 1
+
     func toggleMute() {
         isMuted.toggle()
         run("window.__encore && window.__encore.setMuted(\(isMuted))")

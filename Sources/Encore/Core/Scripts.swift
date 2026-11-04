@@ -446,6 +446,19 @@ enum Scripts {
       }, 500);
 
       // ---------- Command API (called from Swift) ----------
+      let fadeTarget = 1, fadeLevel = 1, fadeTimer = null;
+      const stepFade = () => {
+        fadeLevel += (fadeTarget - fadeLevel) * 0.18;
+        if (Math.abs(fadeTarget - fadeLevel) < 0.004) fadeLevel = fadeTarget;
+        const v = video();
+        if (v) {
+          const muted = call('isMuted');
+          const base = muted ? 0 : Math.max(0, Math.min(1, (call('getVolume') ?? 100) / 100));
+          const want = base * fadeLevel;
+          if (Math.abs(v.volume - want) > 0.002) v.volume = want;
+        }
+        if (fadeLevel === 1 && fadeTarget === 1) { clearInterval(fadeTimer); fadeTimer = null; }
+      };
       window.__encore = {
         snapshot,
         play() { holdAutoplay = false; if (call('playVideo') === undefined) { const v = video(); v && v.play(); } pushState(true); },
@@ -465,6 +478,9 @@ enum Scripts {
         },
         setVolume(vol) { call('setVolume', Math.max(0, Math.min(100, vol))); if (vol > 0) call('unMute'); pushState(true); },
         setMuted(m) { m ? call('mute') : call('unMute'); pushState(true); },
+        // Crossfade / sleep fades: a gain on top of YouTube's own volume, eased
+        // smoothly towards the target, so the volume setting itself never moves.
+        setFade(f) { fadeTarget = Math.max(0, Math.min(1, +f || 0)); if (!fadeTimer) fadeTimer = setInterval(stepFade, 40); },
         setRate(r) { const v = video(); if (call('setPlaybackRate', r) === undefined && v) v.playbackRate = r; },
         setQuality(q) { settings.quality = q; applyQuality(); scheduleQuality(); },
         setCinema(on) { settings.cinema = !!on; applyCinema(); },

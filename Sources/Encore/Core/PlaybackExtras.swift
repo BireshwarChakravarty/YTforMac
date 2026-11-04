@@ -62,6 +62,10 @@ final class PlaybackExtras {
     @ObservationIgnored private var fading = false
     @ObservationIgnored private var lastNotifiedId = ""
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    // Crossfade: fading out the end of a video, then in the start of the next.
+    @ObservationIgnored private var fadingOut = false
+    @ObservationIgnored private var fadeInFrom: Date?
+    @ObservationIgnored private var endedAt: Date?
 
     init(player: PlayerEngine, settings: AppSettings) {
         self.player = player
@@ -87,6 +91,16 @@ final class PlaybackExtras {
             sleep = .off
             toast?("Sleep timer: paused", "moon.zzz.fill", nil, nil)
         }
+        // Crossfade: the next video starts silent and fades in if the last one faded out.
+        if fadingOut, settings.crossfade > 0 {
+            player.setFade(0)
+            fadeInFrom = Date()
+        } else {
+            fadeInFrom = nil
+            player.setFade(1)
+        }
+        fadingOut = false
+        endedAt = nil
         let id = currentId
         loadTask = Task { [weak self] in
             await self?.loadDetails(for: id)
@@ -111,6 +125,30 @@ final class PlaybackExtras {
         // Resume: remember where we are in long videos
         if settings.resumeLongVideos, player.duration > 600, !player.isLive, !player.isAd {
             ResumeStore.shared.record(id: player.videoId, position: t, duration: player.duration)
+        }
+        // Crossfade
+        let xf = settings.crossfade
+        if !fading {
+            if let from = fadeInFrom {
+                let k = player.isAd ? 1 : min(1, Date().timeIntervalSince(from) / max(1, xf))
+                player.setFade(k * k * (3 - 2 * k))
+                if k >= 1 { fadeInFrom = nil }
+            } else if xf > 0, player.duration > xf * 3, !player.isLive, !player.isAd {
+                let left = player.duration - t
+                if left <= xf {
+                    let k = max(0, left / xf)
+                    player.setFade(k * k * (3 - 2 * k))
+                    fadingOut = true
+                    // Paused at the end (autoplay off): bring the volume back.
+                    if !player.isPlaying, left < 1.5 {
+                        if endedAt == nil { endedAt = Date() }
+                        if let e = endedAt, Date().timeIntervalSince(e) > 3 { player.setFade(1); fadingOut = false }
+                    }
+                } else if fadingOut {
+                    fadingOut = false            // seeked back out of the fade
+                    player.setFade(1)
+                }
+            }
         }
         // Sleep timer
         switch sleep {
@@ -140,13 +178,12 @@ final class PlaybackExtras {
 
     private func fadeOutAndPause(over seconds: Double) {
         fading = true
-        let start = player.volume
         let steps = 24
         Task { [weak self] in
             for i in 1...steps {
                 try? await Task.sleep(for: .seconds(seconds / Double(steps)))
                 guard let self, self.sleep != .off else { break }
-                self.player.setVolume(start * (1 - Double(i) / Double(steps)))
+                self.player.setFade(1 - Double(i) / Double(steps))
             }
             guard let self else { return }
             if self.sleep != .off {
@@ -154,8 +191,8 @@ final class PlaybackExtras {
                 self.sleep = .off
                 self.toast?("Sleep timer: paused", "moon.zzz.fill", nil, nil)
             }
-            try? await Task.sleep(for: .seconds(0.6))
-            self.player.setVolume(start)
+            try? await Task.sleep(for: .seconds(0.8))
+            self.player.setFade(1)
             self.fading = false
         }
     }
