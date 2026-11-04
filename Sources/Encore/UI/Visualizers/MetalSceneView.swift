@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case cosmos, aurora, silk, halo, waves, drive, classic, warp
+    case aurora, silk, halo, waves, drive, classic, warp
     /// The quiet dusk behind Lyric Pop.
     case calm
     /// A dimmer, slower Silk: the backdrop for lyrics.
@@ -39,9 +39,6 @@ enum MetalScene: String {
 
     var config: Config {
         switch self {
-        case .cosmos:
-            return Config(background: "cosmosBackground", pointVertex: "cosmosVertex", pointCount: 90_000,
-                          decay: 0.55, maxMode: 1, threshold: 0.7, bloom: 0.9, exposure: 1.05)
         case .aurora:
             return Config(fragment: "auroraFragment", threshold: 0.75, bloom: 0.7, exposure: 1.0)
         case .silk:
@@ -233,7 +230,7 @@ struct MetalSceneView: NSViewRepresentable {
 /// Runs the multi-pass pipeline every frame.
 final class SceneRenderer: NSObject, MTKViewDelegate {
     private let visualizer: VisualizerEngine
-    private var scene: MetalScene = .cosmos
+    private var scene: MetalScene = .drive
     private var palette: ArtworkPalette = .brand
     private var colors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
     private var targetColors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)

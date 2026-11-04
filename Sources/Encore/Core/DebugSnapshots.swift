@@ -31,7 +31,7 @@ enum DebugSnapshots {
             log(model, "initial")
             await captureMain(dir, "1-audio-\(model.settings.visualizerStyle.rawValue)")
 
-            for style in [VisualizerStyle.cosmos, .aurora, .silk, .drive, .waves, .halo, .classic, .warp] {
+            for style in [VisualizerStyle.spectrum, .aurora, .silk, .drive, .waves, .halo, .classic, .warp] {
                 model.settings.visualizerStyle = style
                 try? await Task.sleep(for: .seconds(3.5))
                 await captureMain(dir, "2-audio-\(style.rawValue)")

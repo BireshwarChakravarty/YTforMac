@@ -10,13 +10,13 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case drive, classic, warp, cosmos, aurora, halo, silk, waves, lyricPop, singAlong
+    case drive, spectrum, classic, warp, aurora, halo, silk, waves, lyricPop, singAlong
     var id: String { rawValue }
     var title: String {
         switch self {
         case .lyricPop: return "Lyric Pop"
         case .singAlong: return "Sing-Along"
-        case .cosmos: return "Cosmos"
+        case .spectrum: return "Spectrum"
         case .aurora: return "Aurora"
         case .silk: return "Silk"
         case .drive: return "Night Drive"
@@ -30,7 +30,7 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .lyricPop: return "quote.bubble.fill"
         case .singAlong: return "music.mic"
-        case .cosmos: return "sparkles"
+        case .spectrum: return "waveform"
         case .aurora: return "moon.stars.fill"
         case .silk: return "wind"
         case .drive: return "car.rear.fill"
@@ -45,7 +45,7 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .lyricPop: return "Synced lyrics that burst in, word by word"
         case .singAlong: return "Scrolling karaoke lyrics, line by line"
-        case .cosmos: return "A spiral galaxy in deep space"
+        case .spectrum: return "A mirrored spectrum that drifts through colour"
         case .aurora: return "Northern lights over a lake"
         case .silk: return "Flowing satin in your artwork's colours"
         case .drive: return "A rainy night drive in a Creta"
@@ -55,12 +55,12 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .warp: return "Tunnels of colour from the waveform"
         }
     }
-    /// Every style runs through the Metal pipeline.
+    /// GPU scenes run through the Metal pipeline; Spectrum uses SwiftUI Canvas.
     var metalScene: MetalScene? {
         switch self {
         case .lyricPop: return .calm
         case .singAlong: return .stage
-        case .cosmos: return .cosmos
+        case .spectrum: return nil
         case .aurora: return .aurora
         case .silk: return .silk
         case .drive: return .drive

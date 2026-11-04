@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QuartzCore
 
 /// Plain RGB triple used for fast colour interpolation inside `Canvas`.
 struct RGB: Equatable {
@@ -154,6 +155,8 @@ enum CanvasPainter {
         var reflect = true
         var peaks = true
         var mirroredVertical = false
+        /// Drift slowly through the colour wheel (faster with loud passages) instead of the artwork's palette.
+        var cycleColours = false
     }
 
     static func spectrum(_ ctx: inout GraphicsContext, size: CGSize, engine e: VisualizerEngine, state s: CanvasVizState,
@@ -179,9 +182,15 @@ enum CanvasPainter {
             }
         }
         let shapes = bars()
+        // Hue drifts with time and with the music's own phase; bars fan across a third of the wheel.
+        let hue0 = (CACurrentMediaTime() * 0.018 + e.phase * 0.02).truncatingRemainder(dividingBy: 1)
+        func cycled(_ edge: Double, _ offset: Double, _ brightness: Double) -> Color {
+            let h = (hue0 + edge * 0.3 + offset).truncatingRemainder(dividingBy: 1)
+            return Color(hue: h, saturation: 0.74, brightness: brightness)
+        }
         func shading(_ rect: CGRect, _ edge: Double) -> GraphicsContext.Shading {
-            let top = s.at(0.34 + edge * 0.55 + e.phase * 0.015).color()
-            let bottom = s.colors[0].color()
+            let top = o.cycleColours ? cycled(edge, 0, 1.0) : s.at(0.34 + edge * 0.55 + e.phase * 0.015).color()
+            let bottom = o.cycleColours ? cycled(edge, 0.14, 0.78) : s.colors[0].color()
             return .linearGradient(Gradient(colors: o.mirroredVertical ? [top, bottom, top] : [top, bottom]),
                                    startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.minX, y: rect.maxY))
         }
@@ -190,7 +199,7 @@ enum CanvasPainter {
             var bloom = ctx
             bloom.blendMode = .plusLighter
             bloom.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
-                Gradient(colors: [s.colors[1].color(0.16 + Double(e.level) * 0.22), .clear]),
+                Gradient(colors: [(o.cycleColours ? cycled(0.5, 0.07, 1.0) : s.colors[1].color()).opacity(0.16 + Double(e.level) * 0.22), .clear]),
                 center: CGPoint(x: w / 2, y: mid), startRadius: 10, endRadius: w * 0.55))
             // Soft glow pass.
             ctx.drawLayer { layer in

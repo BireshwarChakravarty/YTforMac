@@ -30,6 +30,11 @@ private struct GeneralSettings: View {
                 Text("Closing the window keeps the music playing. Media keys, AirPods and Control Center keep working. Quit with ⌘Q to stop.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            LabeledContent("Version") {
+                let info = Bundle.main.infoDictionary
+                Text("\(info?["CFBundleShortVersionString"] as? String ?? "?") (build \(info?["CFBundleVersion"] as? String ?? "?"))")
+                    .monospacedDigit().foregroundStyle(.secondary).textSelection(.enabled)
+            }
         }
         .formStyle(.grouped)
     }

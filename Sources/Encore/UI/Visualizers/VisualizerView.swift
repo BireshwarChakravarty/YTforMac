@@ -43,8 +43,15 @@ struct VisualizerView: View {
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize, time t: Double) {
         let e = model.visualizer
-        // GPU styles fall back to Halo if Metal is unavailable.
-        CanvasPainter.halo(&ctx, size: size, engine: e, state: state, artwork: model.player.artwork, time: t, compact: compact)
+        switch style {
+        case .spectrum:
+            CanvasPainter.spectrum(&ctx, size: size, engine: e, state: state,
+                                   options: compact ? .init(count: 40, gap: 3, mini: true, peaks: false)
+                                                    : .init(count: 64, gap: 5, mirroredVertical: true, cycleColours: true))
+        default:
+            // GPU styles fall back to Halo if Metal is unavailable.
+            CanvasPainter.halo(&ctx, size: size, engine: e, state: state, artwork: model.player.artwork, time: t, compact: compact)
+        }
     }
 }
 

@@ -34,6 +34,10 @@ cp "$ROOT"/Resources/NightDrive/* "$APP/Contents/Resources/"
 if [[ -n "${VERSION:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 fi
+# Every CI build gets its own build number (the workflow's run number).
+if [[ -n "${BUILD_NUMBER:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
+fi
 
 echo "==> Signing (ad-hoc)"
 codesign --force --deep -s - "$APP"
