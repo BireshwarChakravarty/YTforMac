@@ -103,6 +103,7 @@ final class LyricsService {
     @ObservationIgnored private var earHeard: [LyricsAligner.Word] = []
     @ObservationIgnored private let listener = LyricsListener()
     @ObservationIgnored private var watchdog: Timer?
+    @ObservationIgnored private var listenRequested = false
     @ObservationIgnored weak var audioTap: AudioTap?
     @ObservationIgnored weak var player: PlayerEngine?
 
@@ -281,48 +282,52 @@ final class LyricsService {
     /// Listens to the song with on-device speech recognition so the lyrics can be
     /// aligned to what's actually sung. Asks for permission the first time.
     func startListening() {
-        guard !baseLines.isEmpty, demoStart == nil, watchdog == nil else { return }
+        guard !baseLines.isEmpty, demoStart == nil, !listenRequested else { return }
+        listenRequested = true
         let videoId = trackKey
-        LyricsListener.requestAuthorization { [weak self] ok in
-            guard let self, self.trackKey == videoId, self.watchdog == nil else { return }
-            guard ok else {
-                self.listening = .needsPermission
-                self.details.append("Listening: speech recognition is turned off for Encore")
-                return
-            }
-            guard let recognizer = LyricsListener.recognizer(for: self.baseLines) else {
-                self.listening = .unavailable("no on-device speech model")
-                self.details.append("Listening: no on-device speech recognition for this language")
-                return
-            }
-            let listener = self.listener
-            listener.onWords = { [weak self] words in
-                guard let self, self.trackKey == videoId else { return }
-                self.earHeard += words
-                if self.details.last?.hasPrefix("Heard") == true { self.details.removeLast() }
-                self.details.append("Heard \(self.earHeard.count) words by ear so far")
-                self.realign(reason: "by ear")
-            }
-            self.audioTap?.sampleSink = { samples, rate in listener.feed(samples, sampleRate: rate) }
-            listener.start(recognizer: recognizer, videoTime: self.player?.position() ?? 0)
-            self.listening = .listening(recognizer.locale.identifier)
-            self.details.append("Listening: on-device speech recognition (\(recognizer.locale.identifier))")
-            // Seeks and pauses break the timeline; start over when they happen.
-            self.watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let player = self.player else { return }
-                    listener.timeline { t in
-                        DispatchQueue.main.async {
-                            guard let t, player.isPlaying, abs(t - player.position()) > 1.5 else { return }
-                            listener.start(recognizer: recognizer, videoTime: player.position())
+        let lines = baseLines
+        let listener = self.listener
+        listener.onWords = { [weak self] words in
+            guard let self, self.trackKey == videoId else { return }
+            self.earHeard += words
+            if self.details.last?.hasPrefix("Heard") == true { self.details.removeLast() }
+            self.details.append("Heard \(self.earHeard.count) words by ear so far")
+            self.realign(reason: "by ear")
+        }
+        listener.onProblem = { [weak self] message in
+            guard let self, self.trackKey == videoId else { return }
+            self.details.append("Listening: \(message)")
+            if message.contains("Dictation") { self.listening = .unavailable("Siri & Dictation is off") }
+        }
+        audioTap?.sampleSink = { samples, rate in listener.feed(samples, sampleRate: rate) }
+        listener.start(lines: lines, videoTime: player?.position() ?? 0) { [weak self] result in
+            guard let self, self.trackKey == videoId, self.listenRequested else { listener.stop(); return }
+            switch result {
+            case .listening(let engine):
+                self.listening = .listening(engine)
+                self.details.append("Listening: on-device speech recognition (\(engine))")
+                // Seeks and pauses break the timeline; start over when they happen.
+                self.watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let player = self.player else { return }
+                        listener.timeline { t in
+                            DispatchQueue.main.async {
+                                guard let t, player.isPlaying, abs(t - player.position()) > 1.5 else { return }
+                                listener.start(lines: lines, videoTime: player.position()) { _ in }
+                            }
                         }
                     }
                 }
+            case .failed(let reason, let needsPermission):
+                self.listening = needsPermission ? .needsPermission : .unavailable(reason)
+                self.details.append("Listening: \(reason)")
+                self.audioTap?.sampleSink = nil
             }
         }
     }
 
     func stopListening(note: String? = nil) {
+        listenRequested = false
         watchdog?.invalidate()
         watchdog = nil
         listener.stop()

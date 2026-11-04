@@ -548,6 +548,17 @@ private struct LyricsDetailsView: View {
                     }
                 }
             }
+            if lyrics.listening == .unavailable("Siri & Dictation is off") {
+                Text("This Mac's speech recogniser needs Siri & Dictation turned on (System Settings \u{2192} Keyboard \u{2192} Dictation). Recognition stays on your Mac.")
+                    .font(Theme.Fonts.body(12))
+                    .foregroundStyle(Theme.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Keyboard Settings\u{2026}") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
             HStack {
                 Button(copied ? "Copied" : "Copy Details") {
                     NSPasteboard.general.clearContents()

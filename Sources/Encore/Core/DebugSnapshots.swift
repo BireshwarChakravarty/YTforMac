@@ -188,11 +188,6 @@ enum DebugSnapshots {
     private static func listenerSelfTest() async {
         let demo = LRC.parse(LyricsService.demoLRC)
         print("LISTENTEST speech authorization: \(LyricsListener.authorization.rawValue)")
-        guard LyricsListener.authorization == .authorized else { return }
-        guard let recognizer = LyricsListener.recognizer(for: demo) else {
-            print("LISTENTEST no on-device recogniser available")
-            return
-        }
         let rate = 22_050.0
         var audio = [Float](repeating: 0, count: Int(rate * 50))
         let synth = AVSpeechSynthesizer()
@@ -202,11 +197,21 @@ enum DebugSnapshots {
             for (i, v) in samples.enumerated() where at + i < audio.count { audio[at + i] += v }
         }
         let rms = sqrt(audio.reduce(0) { $0 + $1 * $1 } / Float(audio.count))
-        print("LISTENTEST synthesised \(audio.count) samples, rms \(String(format: "%.4f", rms)), on-device \(recognizer.supportsOnDeviceRecognition)")
+        print("LISTENTEST synthesised \(audio.count) samples, rms \(String(format: "%.4f", rms))")
         let listener = LyricsListener()
         var heard: [LyricsAligner.Word] = []
         listener.onWords = { heard += $0 }
-        listener.start(recognizer: recognizer, videoTime: 0)
+        listener.onProblem = { print("LISTENTEST problem: \($0)") }
+        let engine: String = await withCheckedContinuation { cont in
+            listener.start(lines: demo, videoTime: 0) { result in
+                switch result {
+                case .listening(let e): cont.resume(returning: e)
+                case .failed(let reason, _): cont.resume(returning: "failed: \(reason)")
+                }
+            }
+        }
+        print("LISTENTEST engine: \(engine)")
+        if engine.hasPrefix("failed") { return }
         try? await Task.sleep(for: .milliseconds(300))
         let step = 2048
         var i = 0
@@ -218,7 +223,7 @@ enum DebugSnapshots {
         }
         listener.flush()
         try? await Task.sleep(for: .seconds(20))
-        print("LISTENTEST locale=\(recognizer.locale.identifier) heard \(heard.count) words: \(heard.prefix(8).map { "\($0.text)@\(String(format: "%.1f", $0.time))" }.joined(separator: " "))")
+        print("LISTENTEST heard \(heard.count) words: \(heard.prefix(8).map { "\($0.text)@\(String(format: "%.1f", $0.time))" }.joined(separator: " "))")
         if let r = LyricsAligner.align(demo, to: heard, reestimate: false) {
             print("LISTENTEST aligned by ear: shift \(String(format: "%.2f", r.shiftAtStart)) s (expected 7.5), \(r.anchors) anchors")
         } else {
