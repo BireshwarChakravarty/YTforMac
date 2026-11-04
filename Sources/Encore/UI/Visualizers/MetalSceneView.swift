@@ -158,11 +158,11 @@ final class MetalContext {
         }
     }
 
-    /// Night Drive's painted Creta: exterior, road, cabin and two mask images
-    /// (bound at texture slots 3...7). Nil if they aren't bundled.
+    /// Night Drive's painted Creta cabin and its mask (red: cabin, the rest is
+    /// glass), bound at texture slots 3 and 4. Nil if they aren't bundled.
     private(set) lazy var nightDrive: [MTLTexture]? = {
         guard let loader = textureLoader else { return nil }
-        let names = ["drive-base.jpg", "drive-road.jpg", "drive-cabin.jpg", "drive-masks.png", "drive-masks2.png"]
+        let names = ["drive-cabin.jpg", "drive-masks2.png"]
         var textures: [MTLTexture] = []
         for name in names {
             let parts = name.split(separator: ".")
@@ -221,6 +221,7 @@ struct MetalSceneView: NSViewRepresentable {
     static func dismantleNSView(_ view: MTKView, coordinator: SceneRenderer) {
         view.isPaused = true
         view.delegate = nil
+        coordinator.stopFootage()
     }
 }
 
@@ -274,8 +275,16 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         targetColors = colors
     }
 
+    private var usingFootage = false
+
     func configure(scene: MetalScene, palette: ArtworkPalette, artwork: NSImage?) {
         if scene != self.scene { self.scene = scene; needsClear = true }
+        if (scene == .drive) != usingFootage {
+            usingFootage = scene == .drive
+            MainActor.assumeIsolated {
+                if usingFootage { DriveFootage.shared.retain() } else { DriveFootage.shared.release() }
+            }
+        }
         if palette != self.palette {
             self.palette = palette
             targetColors = Self.vectors(palette)
@@ -292,6 +301,12 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
+    }
+
+    func stopFootage() {
+        guard usingFootage else { return }
+        usingFootage = false
+        MainActor.assumeIsolated { DriveFootage.shared.release() }
     }
 
     private static func vectors(_ p: ArtworkPalette) -> (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) {
@@ -396,8 +411,14 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         u.scroll = scroll
         u.dpr = Float(size.width / max(1, view.bounds.width))
         u.p0 = colors.0; u.p1 = colors.1; u.p2 = colors.2; u.shadow = colors.3
-        let paintedDrive = scene == .drive ? ctx.nightDrive : nil
-        if paintedDrive != nil { u.pad1 = 1 }   // driveFragment: use the painted Creta
+        // Night Drive: the painted cabin over the looping world outside. pad1 tells
+        // the shader both are there (>= 1) and where the loop is (pad1 - 1 seconds).
+        var paintedDrive: [MTLTexture]?
+        if scene == .drive, let cabin = ctx.nightDrive, let device = ctx.device,
+           let world = DriveFootage.shared.frame(device: device) {
+            paintedDrive = cabin + [world]
+            u.pad1 = 1 + Float(DriveFootage.shared.loopTime)
+        }
 
         let cfg = scene.config
         let art = artTexture ?? fallbackArt

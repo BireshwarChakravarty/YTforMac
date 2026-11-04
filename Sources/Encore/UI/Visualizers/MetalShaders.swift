@@ -1242,16 +1242,19 @@ static float4 lofiScene(float2 fc, constant Uniforms &u, texture2d<float> specTe
 }
 
 // ================================================================ Night Drive (painted Creta)
-// Built from a layered painting of a 2024-25 Creta at night (Resources/NightDrive):
-// the exterior painting, the road layer, the cabin, and masks for the lake,
-// leaves, sky, glass and road. Brought to life with gentle, layer-aware motion:
-// the road streams towards you, street lamps sweep overhead, leaves stir, the lake ripples, mist drifts,
-// clouds breathe, stars twinkle, lamps pulse with the music, rain falls and
-// wipers sweep; passing light washes over the dash and the screens show the
-// song and speed. All maths is in the painting's pixel space (1920x1080).
+// The painted cabin of a 2024-25 Creta (Resources/NightDrive) over the world
+// outside: a painterly, seamlessly looping drive along a lake road at night
+// (drive-world.mp4, the windshield's view only, streamed in by DriveFootage).
+// Raindrops gather on the glass and are cleared when the clip's own wipers
+// sweep; the warm light of each lamp going by washes over the cabin, measured
+// from the footage itself; the lamps glow a little with the music; the screens
+// show the song and the speed. All maths is in the painting's pixel space.
 
 #define PD_W 1920.0
 #define PD_H 1080.0
+#define PD_WORLD_H 432.0
+#define PD_LOOP 10.677        // seconds in drive-world.mp4's loop
+#define PD_WIPE 8.75          // when the clip's wipers start their sweep
 
 static float3 pdUntonemap(float3 v) {
     float3 y = clamp(pow(clamp(v, 0.0, 1.0), float3(1.12)), 0.0, 0.975);
@@ -1261,191 +1264,60 @@ static float3 pdUntonemap(float3 v) {
     return (-b + sqrt(b * b - 4.0 * a * c)) / (2.0 * a);
 }
 
-static float3 pdExterior(float2 ip, float t, constant Uniforms &u,
-                         texture2d<float> base, texture2d<float> road, texture2d<float> masks, texture2d<float> masks2) {
-    float2 sz = float2(PD_W, PD_H);
-    float4 m = masks.sample(linearSampler, ip / sz);            // r lake, g leaves, b sky
-    float2 q = ip;
-    // the car moving: a gentle sway and road vibration against the cabin
-    q += float2(1.8 * sin(t * 0.7), 1.0 * sin(t * 5.3) * (0.4 + u.bass) + 0.8 * sin(t * 1.3));
-    // leaves stirring in the wind
-    float lean = clamp(1.0 - ip.y / 420.0, 0.0, 1.0);
-    q.x += m.g * (1.3 * sin(t * 1.1 + ip.y * 0.03) + 0.7 * sin(t * 1.9 + ip.x * 0.045)) * lean;
-    q.y += m.g * 0.6 * sin(t * 1.4 + ip.x * 0.04) * lean;
-    // clouds breathing
-    q.x += m.b * 2.2 * sin(ip.y * 0.022 + t * 0.12);
-    // the lake rippling
-    float depth = clamp((ip.y - 330.0) / 80.0, 0.0, 1.0);
-    q += m.r * float2(1.6 * sin(ip.y * 0.75 + t * 2.2) * (0.4 + depth), 0.6 * sin(ip.x * 0.04 - t * 1.4));
-    float3 col = base.sample(linearSampler, q / sz).rgb;
-    // ---- the drive: everything near the car moves; the distance stays put ----
-    // The painted road converges on (600, 350); its width is 10.5 px per pixel
-    // below the horizon and its centre line runs along x = 600 + 3.73 * d.
-    float dist = t * 14.0;                                       // metres travelled (~50 km/h)
-    float3 warmLight = float3(1.0, 0.68, 0.36);
-    float dd = q.y - 350.0;
-    if (dd > 1.2 && q.y < 416.0) {
-        float width = 10.5 * dd;
-        float uq = (q.x - (600.0 + 3.73 * dd)) / width;
-        if (abs(uq) < 0.47) {
-            float z = 330.0 / dd;
-            float zr = z + dist;
-            // the painted centre dashes give way to flowing ones
-            float nearC = 1.0 - smoothstep(0.018, 0.034, abs(uq));
-            float3 beside = base.sample(linearSampler, float2(q.x + 0.075 * width, q.y) / sz).rgb;
-            col = mix(col, beside, nearC);
-            // asphalt grain and wet sheen sliding under the car
-            col *= 0.9 + 0.2 * fbm3(float2(uq * 9.0, zr * 0.55));
-            col += warmLight * pow(0.5 + 0.5 * sin(zr * 0.9 + uq * 3.0), 10.0) * 0.035 * smoothstep(2.0, 20.0, dd);
-            float pools = 0.0;
-            for (int k = 0; k < 5; k++) {
-                float lz = (float(k) + 1.0) * 30.0 - fmod(dist, 30.0);
-                pools += exp(-pow(z - lz, 2.0) * 0.012) * exp(-pow(uq + 0.28, 2.0) * 5.0);
-            }
-            col += warmLight * pools * 0.10;
-            float ph = fract(zr / 9.0);
-            float dashW = 0.0125;
-            float dash = (1.0 - smoothstep(dashW * 0.55, dashW, abs(uq))) * smoothstep(0.0, 0.03, ph) * (1.0 - smoothstep(0.36, 0.40, ph));
-            col = mix(col, float3(0.86, 0.82, 0.72) * (0.6 + 0.6 * pools), dash * smoothstep(1.5, 6.0, dd) * 0.9);
-        }
-    }
-    // white bollards streaming past along the lake edge (nearest drawn last)
-    for (int i = 11; i >= 0; i--) {
-        float zb = 7.0 * (float(i) + 1.0) - fmod(dist, 7.0);
-        float d = 330.0 / zb;
-        if (d < 3.5 || d > 70.0) continue;
-        float2 bc = float2(715.0 + 7.5 * d + 0.054 * d * d, 350.0 + d);
-        float h = 0.5 * d;
-        float w = 0.46 * d;
-        float2 rel = q - (bc - float2(0.0, h * 0.5));
-        float post = sdBox(rel, float2(w * 0.5, h * 0.5), w * 0.18);
-        if (post < 2.0) {
-            float lit = 0.55 + 0.45 * smoothstep(w * 0.5, -w * 0.5, rel.x);        // warm light from the road side
-            float3 white = float3(0.86, 0.82, 0.72) * (0.38 + 0.4 * lit);
-            white = mix(white, white * 0.45, smoothstep(-h * 0.22, -h * 0.12, -rel.y) * (1.0 - smoothstep(-h * 0.08, 0.0, -rel.y)));   // the dark band
-            white += float3(1.0, 0.9, 0.75) * smoothstep(-h * 0.5, -h * 0.38, rel.y) * 0.12;                                          // cap catching light
-            col = mix(col, white, (1.0 - smoothstep(-0.8, 0.8, post)) * smoothstep(3.5, 7.0, d));
-        }
-    }
-    // street lamps on the left verge, every 30 m above the pools of light:
-    // they rise out of the distance, sweep overhead and out past the pillar
-    for (int i = 5; i >= 0; i--) {
-        float zl = 30.0 * (float(i) + 1.0) - fmod(dist, 30.0);
-        float d = 330.0 / zl;
-        if (d < 1.6) continue;
-        float fade = smoothstep(1.6, 4.0, d);
-        float baseX = 600.0 + 3.73 * d - 6.9 * d;
-        float baseY = 350.0 + d;
-        float top = baseY - 11.0 * d;
-        float2 head = float2(600.0 + 3.73 * d - 4.6 * d, top + 0.35 * d);
-        float pw = max(0.13 * d, 0.7);
-        float pole = sdBox(q - float2(baseX, (baseY + top) * 0.5), float2(pw * 0.5, (baseY - top) * 0.5), 0.0);
-        float2 a0 = float2(baseX, top), ab = head - a0;
-        float2 ap = q - a0;
-        float arm = length(ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0)) - pw * 0.3;
-        float frame = min(pole, arm);
-        float3 metal = float3(0.03, 0.033, 0.04) + warmLight * 0.05 * smoothstep(pw * 0.5, -pw * 0.5, q.x - baseX);
-        col = mix(col, metal, (1.0 - smoothstep(-0.7, 0.7, frame)) * fade * 0.92);
-        float hd = length((q - head) * float2(0.8, 1.7));
-        float core = 1.0 - smoothstep(0.38 * d - 0.6, 0.38 * d + 0.9, hd);
-        col = mix(col, float3(1.0, 0.86, 0.62), core * fade);
-        col += warmLight * (exp(-hd / (1.6 * d)) * 0.32 + exp(-hd / (7.0 * d)) * 0.07 * (0.35 + m.g)) * fade;
-    }
-    // now and then a car comes the other way, its lights growing on the wet road
-    float zc = 260.0 - fmod(t + 20.0, 46.0) * 26.0;
-    if (zc > 4.0) {
-        float d = 330.0 / zc;
-        float fade = smoothstep(1.2, 3.0, d) * (1.0 - smoothstep(55.0, 75.0, d));
-        for (int s = -1; s <= 1; s += 2) {
-            float2 hp = float2(600.0 + 3.73 * d + (0.25 + 0.085 * float(s)) * 10.5 * d, 350.0 + d - 0.45 * d);
-            float rad = max(0.2 * d, 0.6);
-            float hd = length(q - hp);
-            float3 white = float3(1.0, 0.96, 0.88);
-            col = mix(col, white, (1.0 - smoothstep(rad * 0.6, rad * 1.3, hd)) * fade);
-            col += white * exp(-hd / (rad * 5.0)) * 0.22 * fade;
-            float below = q.y - hp.y;
-            if (below > 0.0)
-                col += white * exp(-abs(q.x - hp.x) / (rad * 1.3)) * exp(-below / (0.9 * d)) * 0.12 * fade;
-        }
-    }
-    // rain rushing towards the glass out of the dark (lit by the lamps)
-    float2 rv = q - float2(600.0, 340.0);
-    float rr = length(rv);
-    float ang = atan2(rv.y, rv.x);
-    for (int layer = 0; layer < 2; layer++) {
-        float bins = layer == 0 ? 140.0 : 220.0;
-        float bin = floor((ang / 6.2831853 + 0.5) * bins);
-        float hb = hash1(bin * 3.7 + float(layer) * 17.0);
-        if (hb < 0.55) continue;
-        float phase = fract(t * (0.45 + 0.25 * hb) + hb * 9.0);
-        float r0 = 25.0 * exp(3.6 * phase);
-        float len = 0.06 * r0;
-        float across = abs(fract((ang / 6.2831853 + 0.5) * bins) - 0.5);
-        float streak = (1.0 - smoothstep(0.0, len, abs(rr - r0))) * (1.0 - smoothstep(0.08, 0.22, across));
-        col += mix(float3(0.75, 0.8, 1.0), warmLight, 0.4) * streak * smoothstep(0.0, 0.3, phase) * (1.0 - smoothstep(0.85, 1.0, phase)) * 0.16;
-    }
-    // stars twinkling
-    float lum = dot(col, float3(0.2126, 0.7152, 0.0722));
-    col *= 1.0 + m.b * smoothstep(0.45, 0.8, lum) * 0.5 * sin(t * 3.0 + hash2(floor(ip / 4.0)) * 30.0);
-    // moonlight breathing
-    float md = length(ip - float2(1504.0, 92.0));
-    col += float3(0.9, 0.85, 0.7) * exp(-md / 70.0) * 0.06 * (1.0 + 0.5 * sin(t * 0.6));
-    // mist drifting through the hills and over the water
-    float zone = smoothstep(200.0, 260.0, ip.y) * (1.0 - smoothstep(330.0, 360.0, ip.y)) * smoothstep(760.0, 900.0, ip.x);
-    float n = fbm3(float2(ip.x * 0.005 - t * 0.015, ip.y * 0.018));
-    col = mix(col, float3(0.5, 0.56, 0.75), zone * smoothstep(0.5, 0.8, n) * 0.18);
-    // back to HDR, then the warm lamps pulse with the music
-    float3 hdr = pdUntonemap(col);
-    float warmGlow = smoothstep(0.6, 0.9, lum) * smoothstep(0.1, 0.3, col.r - col.b);
-    hdr *= 1.0 + warmGlow * (0.35 * u.bass + 0.45 * u.beat);
-    return hdr;
+// The footage at painting pixel `ip`, gently sharpened, lifted back to HDR so
+// the lamps bloom, the warm lights breathing with the bass and beat.
+static float3 pdWorld(float2 ip, texture2d<float> world, float bass, float beat) {
+    float2 sz = float2(PD_W, PD_WORLD_H);
+    float2 uv = ip / sz;
+    float2 tx = 1.0 / float2(world.get_width(), world.get_height());
+    float3 c = world.sample(linearSampler, uv).rgb;
+    float3 n = world.sample(linearSampler, uv + float2(tx.x, 0.0)).rgb + world.sample(linearSampler, uv - float2(tx.x, 0.0)).rgb
+             + world.sample(linearSampler, uv + float2(0.0, tx.y)).rgb + world.sample(linearSampler, uv - float2(0.0, tx.y)).rgb;
+    c = clamp(c + (c - n * 0.25) * 0.35, 0.0, 1.0);
+    float lum = dot(c, float3(0.2126, 0.7152, 0.0722));
+    float3 hdr = pdUntonemap(c);
+    float warmGlow = smoothstep(0.62, 0.92, lum) * smoothstep(0.06, 0.3, c.r - c.b);
+    return hdr * (1.0 + warmGlow * (0.3 * bass + 0.35 * beat));
 }
 
 static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
-                      texture2d<float> base, texture2d<float> road, texture2d<float> cabin,
-                      texture2d<float> masks, texture2d<float> masks2) {
+                      texture2d<float> cabin, texture2d<float> masks2, texture2d<float> world) {
     float2 sz = float2(PD_W, PD_H);
     float s = max(u.res.x / PD_W, u.res.y / PD_H);
     float2 o = (u.res - sz * s) * 0.5;
     float2 ip = float2(fc.x - o.x, (u.res.y - fc.y) - o.y) / s;     // painting pixels, y down
     float2 p = float2(ip.x - PD_W * 0.5, PD_H * 0.5 - ip.y) / PD_H;  // height units, y up
     float t = u.time;
-    float px = 1.0 / (PD_H * s);
-    // rain on the glass and the wipers (pivots at the foot of the windshield)
-    float blade;
-    float2 wp = p - float2(0.06, 0.215);
-    float since = drvWipe(wp, t, blade);
+    float loopT = u.pad1 - 1.0;
+    // raindrops gather until the clip's wipers sweep them away (left to right)
+    float since = loopT - (PD_WIPE + 0.7 * ip.x / PD_W);
+    if (since < 0.0) since += PD_LOOP;
+    float cycle = floor((t - since) / PD_LOOP + 0.5);
+    float2 wp = p - float2(0.06, 0.215) + float2(hash1(cycle * 7.1), hash1(cycle * 3.3)) * 0.37;
     float3 r = driveRain(wp, t, since);
     float2 refr = float2(r.x, -r.y) * PD_H;
-    float3 view = pdExterior(ip + refr * 2.5, t, u, base, road, masks, masks2);
+    float3 view = pdWorld(ip + refr * 2.5, world, u.bass, u.beat);
     if (r.z > 0.01) {
-        float3 sharp = pdExterior(ip - refr * 5.0, t, u, base, road, masks, masks2);
-        view = mix(view, sharp * 1.12 + 0.02, r.z * 0.75);
+        float3 sharp = pdWorld(ip - refr * 5.0, world, u.bass, u.beat);
+        view = mix(view, sharp * 1.1 + 0.015, r.z * 0.7);
     }
-    view *= 0.93 + 0.07 * (1.0 - r.z);
-    // each lamp going overhead lights up the drops and glances off the glass
-    float overhead = 0.0;
-    for (int k = 0; k < 4; k++) {
-        float lz = (float(k) + 1.0) * 30.0 - fmod(t * 14.0, 30.0);
-        overhead += exp(-pow(lz - 6.0, 2.0) * 0.05);
-    }
-    float3 sodium = float3(1.0, 0.66, 0.34);
-    view *= 1.0 + sodium * overhead * r.z * 0.22;
-    view += sodium * overhead * 0.03 * smoothstep(0.5, -0.6, p.x + p.y * 0.6);
-    view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
+    view *= 0.95 + 0.05 * (1.0 - r.z);
 
     // the painted cabin
     float glass = 1.0 - masks2.sample(linearSampler, ip / sz).r;
     float3 cab = pdUntonemap(cabin.sample(linearSampler, ip / sz).rgb);
-    // light from lamps going by washes over the cabin from the left
-    float pass = 0.0;
-    for (int k = 0; k < 4; k++) {
-        float lz = (float(k) + 1.0) * 30.0 - fmod(t * 14.0, 30.0);
-        pass += exp(-pow(lz - 3.0, 2.0) * 0.08);                  // the lamp passing overhead
+    // warm light from the lamps going by, read off the footage's upper left
+    float lampL = 0.0;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 3; j++) {
+            float2 sp = float2(70.0 + 160.0 * float(i), 25.0 + 80.0 * float(j)) / float2(PD_W, PD_WORLD_H);
+            float3 c = world.sample(linearSampler, sp).rgb;
+            lampL += max(dot(c, float3(0.5, 0.4, 0.1)) - 0.16, 0.0);
+        }
     }
-    pass *= 1.0 + 0.4 * u.bass;
+    float pass = clamp(lampL / 12.0 * 4.0, 0.0, 1.2) * (1.0 + 0.3 * u.bass);
     float fromLeft = smoothstep(0.8, -0.7, p.x) * smoothstep(-0.45, 0.2, p.y);
-    float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.45 * fromLeft);
+    float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.5 * fromLeft);
     // infotainment: the song's LED bars (title drawn natively above them)
     float2 sMin = float2(682.0, 428.0);
     float2 sMax = float2(1106.0, 556.0);
@@ -1479,13 +1351,11 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
 fragment float4 driveFragment(QuadOut in [[stage_in]],
                               constant Uniforms &u [[buffer(0)]],
                               texture2d<float> specTex [[texture(0)]],
-                              texture2d<float> base [[texture(3)]],
-                              texture2d<float> road [[texture(4)]],
-                              texture2d<float> cabin [[texture(5)]],
-                              texture2d<float> masks [[texture(6)]],
-                              texture2d<float> masks2 [[texture(7)]]) {
+                              texture2d<float> cabin [[texture(3)]],
+                              texture2d<float> masks2 [[texture(4)]],
+                              texture2d<float> world [[texture(5)]]) {
     float2 fc = fragCoord(in.position, u);
-    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, base, road, cabin, masks, masks2);
+    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, cabin, masks2, world);
     return lofiScene(fc, u, specTex);
 }
 
