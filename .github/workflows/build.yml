@@ -18,7 +18,7 @@ on:
       runner:
         description: "Build machine. Use macos-26-intel when Apple-silicon runners are short (the app is still universal; Metal screenshots may fall back)."
         type: choice
-        options: [macos-26, macos-26-intel]
+        options: [macos-26, macos-26-intel, macos-15]
         required: false
         default: macos-26
 
@@ -31,6 +31,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Use Xcode 26 (older images ship it alongside their default)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ] && ! xcodebuild -version | grep -q "Xcode 26"; then sudo xcode-select -s "$X"; fi
 
       - name: Toolchain info
         run: |
