@@ -150,6 +150,10 @@ final class LyricsService {
         if let cached = cache[videoId] {
             state = cached.0
             approximate = cached.1
+            // Re-arm listening for cached lyrics too (they were never aligned, or we start over).
+            if case .synced(let lines, let source) = cached.0, source != .captions, source != .autoCaptions, source != .demo {
+                baseLines = lines
+            }
             if case .synced(_, let source) = cached.0, let lines = alignedCache[videoId] {
                 state = .synced(lines, source)
                 aligned = true
@@ -315,7 +319,8 @@ final class LyricsService {
                         guard let self, let player = self.player else { return }
                         listener.timeline { t in
                             DispatchQueue.main.async {
-                                guard let t, player.isPlaying, abs(t - player.position()) > 1.5 else { return }
+                                // Only a real jump (a seek, or resuming after a pause) needs a fresh start.
+                                guard let t, player.isPlaying, abs(t - player.position()) > 4.0 else { return }
                                 listener.start(lines: lines, videoTime: player.position()) { _ in }
                             }
                         }
