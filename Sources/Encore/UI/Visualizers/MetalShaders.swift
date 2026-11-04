@@ -337,19 +337,32 @@ fragment float4 warpFragment(QuadOut in [[stage_in]],
 
 fragment float4 flowFragment(QuadOut in [[stage_in]],
                              constant Uniforms &u [[buffer(0)]],
-                             texture2d<float> specTex [[texture(0)]]) {
+                             texture2d<float> specTex [[texture(0)]],
+                             texture2d<float> waveTex [[texture(6)]]) {
     float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
+    float px = 1.0 / u.res.y;
     float r = length(uv), a = atan2(uv.y, uv.x);
     float seg = abs(fract(a / (2.0 * M_PI_F) + 0.25) * 2.0 - 1.0);
     float s = spec(specTex, seg * 0.85);
-    float ringR = 0.16 + 0.10 * s + 0.03 * u.beat;
-    float d = abs(r - ringR);
-    float line = exp(-d * d / 0.00002) * (0.6 + 1.6 * s);
-    float3 col = pal(u, seg * 0.6 + u.phase * 0.05) * line * 1.3;
-    for (int i = 0; i < 6; i++) {
+    float3 col = float3(0.0);
+    // three strands of light: the spectrum, the waveform, and a slow echo
+    for (int k = 0; k < 3; k++) {
+        float fk = float(k);
+        float ringR;
+        if (k == 0) ringR = 0.15 + 0.10 * s + 0.03 * u.beat;
+        else if (k == 1) ringR = 0.22 + 0.035 * waveAt(waveTex, fract(a / (2.0 * M_PI_F) + 0.5)) * smoothstep(0.0, 0.08, min(seg, 1.0 - seg) + 0.04);
+        else ringR = 0.09 + 0.05 * s * s + 0.02 * sin(a * 3.0 + u.time * 0.7);
+        float d = abs(r - ringR);
+        float w = px * (1.2 + fk * 0.4);
+        float line = exp(-d * d / (w * w)) * (0.5 + 1.4 * s) + exp(-d / (px * 8.0)) * 0.12;
+        col += pal(u, seg * 0.6 + u.phase * 0.05 + fk * 0.22) * line * (k == 1 ? 0.4 : 0.5);
+    }
+    // orbiting motes that leave rivers in the feedback
+    for (int i = 0; i < 8; i++) {
         float fi = float(i);
-        float2 sp = 0.12 * float2(cos(u.time * (0.7 + fi * 0.13) + fi * 2.0), sin(u.time * (0.9 + fi * 0.11) + fi));
-        col += pal(u, fi / 6.0) * exp(-dot(uv - sp, uv - sp) / 0.00006) * (0.4 + u.treble);
+        float2 sp = (0.1 + 0.03 * sin(fi * 2.1)) * float2(cos(u.time * (0.6 + fi * 0.11) + fi * 2.0), sin(u.time * (0.8 + fi * 0.09) + fi));
+        float dd = dot(uv - sp, uv - sp);
+        col += pal(u, fi / 8.0) * (exp(-dd / 0.00004) * 0.7 + exp(-dd / 0.0012) * 0.025) * (0.4 + u.treble);
     }
     return float4(col, 1.0);
 }
