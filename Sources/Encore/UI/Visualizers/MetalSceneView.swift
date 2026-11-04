@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case flow, cosmos, aurora, silk, halo, waves, drive, tide
+    case flow, cosmos, aurora, silk, halo, waves, drive, tide, classic, warp
     /// The quiet dusk behind Lyric Pop.
     case calm
     /// A dimmer, slower Silk: the backdrop for lyrics.
@@ -59,6 +59,11 @@ enum MetalScene: String {
             return Config(fragment: "driveFragment", threshold: 0.75, bloom: 0.9, exposure: 1.05)
         case .calm:
             return Config(fragment: "calmFragment", threshold: 0.9, bloom: 0.5, exposure: 1.0)
+        case .classic:
+            return Config(fragment: "classicFragment", threshold: 0.9, bloom: 0.7, exposure: 1.0)
+        case .warp:
+            return Config(fragment: "warpFragment", decay: 0.97, zoom: 1.022, zoomBass: 0.03, rot: 0.01, warp: 1.4, maxMode: 1,
+                          threshold: 0.6, bloom: 0.9, exposure: 1.0)
         case .tide:
             return Config(background: "tideBackground", pointVertex: "tideVertex", pointCount: 220 * 110,
                           decay: 0.6, maxMode: 1, threshold: 0.6, bloom: 0.9, exposure: 1.1)
@@ -235,6 +240,10 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
 
     private var specTexture: MTLTexture?
     private var histTexture: MTLTexture?
+    private var waveTexture: MTLTexture?
+    private var peakTexture: MTLTexture?
+    private var waveBytes = [UInt8](repeating: 128, count: VisualizerEngine.waveCount)
+    private var peakBytes = [UInt8](repeating: 0, count: 64)
     private var artTexture: MTLTexture?
     private var fallbackArt: MTLTexture?
     private weak var lastArtwork: NSImage?
@@ -264,6 +273,10 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             let d2 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: 64, height: 64, mipmapped: false)
             d2.usage = .shaderRead
             histTexture = device.makeTexture(descriptor: d2)
+            let d4 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: VisualizerEngine.waveCount, height: 1, mipmapped: false)
+            d4.usage = .shaderRead
+            waveTexture = device.makeTexture(descriptor: d4)
+            peakTexture = device.makeTexture(descriptor: d1)
             let d3 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
             d3.usage = .shaderRead
             fallbackArt = device.makeTexture(descriptor: d3)
@@ -379,6 +392,16 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         }
         spectrum.withUnsafeBytes { specTexture?.replace(region: MTLRegionMake2D(0, 0, 64, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 64) }
         history.withUnsafeBytes { histTexture?.replace(region: MTLRegionMake2D(0, 0, 64, 64), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 64) }
+        let wave = visualizer.wave, peaks = visualizer.peaks
+        for i in 0..<VisualizerEngine.waveCount { waveBytes[i] = UInt8(max(0, min(255, 128 + wave[i] * 127))) }
+        for i in 0..<64 {
+            let x = Float(i) / 63 * Float(peaks.count - 1)
+            let i0 = Int(x), i1 = min(peaks.count - 1, i0 + 1), f = x - Float(i0)
+            peakBytes[i] = UInt8(max(0, min(255, (peaks[i0] * (1 - f) + peaks[i1] * f) * 255)))
+        }
+        let waveCount = VisualizerEngine.waveCount
+        waveBytes.withUnsafeBytes { waveTexture?.replace(region: MTLRegionMake2D(0, 0, waveCount, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: waveCount) }
+        peakBytes.withUnsafeBytes { peakTexture?.replace(region: MTLRegionMake2D(0, 0, 64, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 64) }
 
         let k = Float(1 - exp(-Double(dt) * 2.5))
         colors = (Self.mixVec(colors.0, targetColors.0, k), Self.mixVec(colors.1, targetColors.1, k),
@@ -408,6 +431,8 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             enc.setFragmentTexture(specTexture, index: 0)
             enc.setFragmentTexture(histTexture, index: 1)
             enc.setFragmentTexture(art, index: 2)
+            enc.setFragmentTexture(waveTexture, index: 6)
+            enc.setFragmentTexture(peakTexture, index: 7)
             if let paintedDrive {
                 for (i, texture) in paintedDrive.enumerated() { enc.setFragmentTexture(texture, index: 3 + i) }
             }

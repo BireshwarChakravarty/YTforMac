@@ -10,7 +10,7 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, tide
+    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, tide, classic, warp
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -25,6 +25,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .halo: return "Halo"
         case .spectrum: return "Spectrum"
         case .tide: return "Tide"
+        case .classic: return "Classic"
+        case .warp: return "Warp"
         }
     }
     var symbol: String {
@@ -40,6 +42,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .halo: return "circle.dashed"
         case .spectrum: return "waveform"
         case .tide: return "water.waves"
+        case .classic: return "chart.bar.fill"
+        case .warp: return "hurricane"
         }
     }
     /// Short description shown in the picker.
@@ -56,6 +60,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .halo: return "Artwork ringed by the spectrum"
         case .spectrum: return "A smooth, mirrored waveform"
         case .tide: return "A calm sea of light"
+        case .classic: return "LED spectrum analyser and oscilloscope"
+        case .warp: return "Tunnels of colour from the waveform"
         }
     }
     /// GPU scenes run through the Metal pipeline; Spectrum uses SwiftUI Canvas.
@@ -71,6 +77,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .waves: return .waves
         case .halo: return .halo
         case .tide: return .tide
+        case .classic: return .classic
+        case .warp: return .warp
         case .spectrum: return nil
         }
     }

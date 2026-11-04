@@ -16,6 +16,10 @@ final class VisualizerEngine {
 
     private(set) var bands = [Float](repeating: 0, count: VisualizerEngine.bandCount)
     private(set) var peaks = [Float](repeating: 0, count: VisualizerEngine.bandCount)
+    /// Oscilloscope trace, 256 points in -1...1 (real audio when live, synthesised otherwise).
+    private(set) var wave = [Float](repeating: 0, count: VisualizerEngine.waveCount)
+    static let waveCount = 256
+    private var targetWave = [Float](repeating: 0, count: VisualizerEngine.waveCount)
     /// Overall loudness, 0…1, smoothed.
     private(set) var level: Float = 0
     /// Low-end energy, 0…1, with a fast attack: good for "kick" pulses.
@@ -51,7 +55,10 @@ final class VisualizerEngine {
     private var seed = Double.random(in: 0...1000)
 
     /// Called with each analyser frame from the page (values 0…255).
-    func ingest(bands raw: [UInt8], level: UInt8) {
+    func ingest(bands raw: [UInt8], level: UInt8, wave rawWave: [UInt8] = []) {
+        if rawWave.count == Self.waveCount {
+            for i in 0..<Self.waveCount { targetWave[i] = (Float(rawWave[i]) - 128) / 127 }
+        }
         let n = min(raw.count, Self.bandCount)
         for i in 0..<n {
             // Gentle spectral tilt: high frequencies carry less energy.
@@ -105,6 +112,9 @@ final class VisualizerEngine {
             if bands[i] > peaks[i] { peaks[i] = bands[i] } else { peaks[i] = max(0, peaks[i] - dt * 0.45) }
             if i < 7 { lowSum += bands[i] }
         }
+        let waveK = 1 - exp(-dt * 30)
+        if !isLive { synthesizeWave(time: now, playing: isPlaying) }
+        for i in 0..<Self.waveCount { wave[i] += (targetWave[i] - wave[i]) * waveK }
         let low = lowSum / 7
         bass += (low - bass) * (low > bass ? (1 - exp(-dt * 20)) : (1 - exp(-dt * 3)))
         let lvlGoal = isPlaying ? max(targetLevel, bands.reduce(0, +) / Float(Self.bandCount) * 1.4) : 0.02
@@ -153,6 +163,22 @@ final class VisualizerEngine {
             target[i] = Float(min(1, v * 0.9)) * sensitivity
         }
         targetLevel = Float(0.35 + kick * 0.35) * sensitivity
+    }
+
+    /// A waveform built from the current bands (a few partials per band) for
+    /// when no real audio arrives.
+    private func synthesizeWave(time t: CFTimeInterval, playing: Bool) {
+        let amp: Float = playing ? 1 : 0.15
+        for i in 0..<Self.waveCount {
+            let x = Double(i) / Double(Self.waveCount)
+            var v = 0.0
+            for k in 0..<8 {
+                let b = Double(bands[min(Self.bandCount - 1, k * 6 + 2)])
+                let f = Double(k + 1) * (k < 2 ? 1.0 : 1.7)
+                v += b * sin(2 * .pi * f * x * 2 + t * (2 + Double(k) * 1.3) + Double(k)) / Double(k + 1)
+            }
+            targetWave[i] = Float(max(-1, min(1, v * 0.9))) * amp
+        }
     }
 
     /// Bands resampled to an arbitrary count (linear interpolation).

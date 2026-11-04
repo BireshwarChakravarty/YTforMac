@@ -23,7 +23,8 @@ final class AudioTap: @unchecked Sendable {
     }
 
     /// Called on the main queue with 56 bands (0…255) and a level (0…255).
-    var onFrame: (([UInt8], UInt8) -> Void)?
+    /// Spectrum bands (0...255), level, and a 256-point waveform (128 = zero), per analysis frame.
+    var onFrame: (([UInt8], UInt8, [UInt8]) -> Void)?
     /// Called on the main queue when the status changes.
     var onStatus: ((Status) -> Void)?
     /// Receives the mono mix on the audio thread (used to align lyrics by ear).
@@ -62,6 +63,7 @@ final class AudioTap: @unchecked Sendable {
     }
 
     // Analysis state
+    private var waveGain: Float = 1
     private let fftSize = 4096
     private lazy var fft = vDSP.FFT(log2n: vDSP_Length(log2(Double(fftSize))), radix: .radix2, ofType: DSPSplitComplex.self)
     private lazy var window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: fftSize, isHalfWindow: false)
@@ -320,8 +322,26 @@ final class AudioTap: @unchecked Sendable {
         gain += (target - gain) * (target < gain ? 0.08 : 0.01)
         let out = bands.map { UInt8(max(0, min(255, $0 * gain * 255))) }
         let level = UInt8(max(0, min(255, (20 * log10(max(rms, 1e-7)) + 60) / 60 * 255)))
+        // Oscilloscope: 512 samples from a rising zero crossing (so the trace
+        // stands still on steady tones), halved to 256 points, with soft gain.
+        let n0 = fftSize - 1536
+        var trigger = n0
+        var bestSlope: Float = 0
+        for i in n0..<(n0 + 1024) where samples[i - 1] < 0 && samples[i] >= 0 {
+            let slope = samples[i] - samples[i - 1]
+            if slope > bestSlope { bestSlope = slope; trigger = i }
+        }
+        var wavePeak: Float = 1e-4
+        for i in 0..<512 { wavePeak = max(wavePeak, abs(samples[trigger + i])) }
+        let waveTarget = min(12, 0.85 / wavePeak)
+        waveGain += (waveTarget - waveGain) * (waveTarget < waveGain ? 0.3 : 0.04)
+        var wave = [UInt8](repeating: 128, count: 256)
+        for i in 0..<256 {
+            let v = (samples[trigger + 2 * i] + samples[trigger + 2 * i + 1]) * 0.5 * waveGain
+            wave[i] = UInt8(max(0, min(255, 128 + v * 127)))
+        }
         lastFrameTime = now
-        DispatchQueue.main.async { self.onFrame?(out, level) }
+        DispatchQueue.main.async { self.onFrame?(out, level, wave) }
     }
 
     // MARK: Process discovery

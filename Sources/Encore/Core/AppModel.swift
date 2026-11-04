@@ -50,8 +50,8 @@ final class AppModel {
             self?.visualizerOnScreen = onScreen
             self?.refreshAudioCapture()
         }
-        audioTap.onFrame = { [weak self] bands, level in
-            MainActor.assumeIsolated { self?.visualizer.ingest(bands: bands, level: level) }
+        audioTap.onFrame = { [weak self] bands, level, wave in
+            MainActor.assumeIsolated { self?.visualizer.ingest(bands: bands, level: level, wave: wave) }
         }
         audioTap.onStatus = { [weak self] status in
             MainActor.assumeIsolated { self?.visualizer.audioStatus = status }

@@ -186,6 +186,151 @@ fragment float4 compositeFragment(QuadOut in [[stage_in]],
     return float4(col, 1.0);
 }
 
+// ================================================================ Classic
+// A hi-fi spectrum analyser in the spirit of the classic desktop players: LED
+// segment bars (green to amber to red) with peak caps that fall back slowly,
+// mirrored on a dark glass floor, and a phosphor oscilloscope trace above.
+
+static float waveAt(texture2d<float> w, float x) {
+    return w.sample(linearSampler, float2(clamp(x, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5), level(0)).r * 2.0 - 1.0;
+}
+static float peakAt(texture2d<float> t, float x) {
+    return t.sample(linearSampler, float2(clamp(x, 0.0, 1.0) * 0.92 + 0.02, 0.5), level(0)).r;
+}
+static float3 classicLed(float h) {
+    float3 c = mix(float3(0.10, 1.0, 0.30), float3(1.0, 0.86, 0.12), smoothstep(0.45, 0.68, h));
+    return mix(c, float3(1.0, 0.18, 0.10), smoothstep(0.76, 0.9, h));
+}
+
+fragment float4 classicFragment(QuadOut in [[stage_in]],
+                                constant Uniforms &u [[buffer(0)]],
+                                texture2d<float> specTex [[texture(0)]],
+                                texture2d<float> waveTex [[texture(6)]],
+                                texture2d<float> peakTex [[texture(7)]]) {
+    float2 fc = fragCoord(in.position, u);
+    float2 p = (fc - 0.5 * u.res) / u.res.y;              // height units, y up
+    float aspect = u.res.x / u.res.y;
+    float px = 1.0 / u.res.y;
+    float3 col = mix(float3(0.006, 0.008, 0.012), float3(0.022, 0.026, 0.038), smoothstep(-0.5, 0.5, p.y));
+    col += float3(0.02, 0.04, 0.03) * exp(-pow(p.y + 0.3, 2.0) * 30.0);   // glow along the floor
+    float W = min(aspect * 0.88, 1.75);
+    float fx = (p.x + W * 0.5) / W;
+    float floorY = -0.31, topY = 0.24;
+    float N = floor(clamp(W * 26.0, 24.0, 48.0));
+    if (fx > 0.0 && fx < 1.0) {
+        float bi = floor(fx * N), bf = fract(fx * N);
+        float centre = (bi + 0.5) / N;
+        float v = spec(specTex, centre);
+        float pk = max(peakAt(peakTex, centre), v);
+        float inBar = smoothstep(0.08, 0.08 + N * px / W * 1.5, bf) * (1.0 - smoothstep(0.92 - N * px / W * 1.5, 0.92, bf));
+        float segs = 28.0;
+        float h = (p.y - floorY) / (topY - floorY);
+        float hr = (floorY - p.y) / (topY - floorY);       // mirrored, below the floor
+        float hh = h > 0.0 ? h : hr;
+        float si = floor(hh * segs), sf = fract(hh * segs);
+        float sh = (si + 0.5) / segs;
+        float gap = smoothstep(0.12, 0.2, sf) * (1.0 - smoothstep(0.86, 0.94, sf));
+        float lit = step(sh, v);
+        float cap = step(abs(sh - (floor(pk * segs) + 0.5) / segs), 0.01) * step(0.03, pk);
+        float3 led = classicLed(sh);
+        float3 seg = led * (lit * (1.6 + 0.8 * u.beat * step(sh, 0.3)) + 0.018) + float3(1.0, 0.95, 0.85) * cap * 1.8;
+        if (hh > 0.0 && hh < 1.0) {
+            float m = inBar * gap;
+            if (h > 0.0) col = mix(col, seg, m);
+            else col = mix(col, seg * 0.22 * exp(-hr * 4.0), m * (0.6 + 0.4 * sin(p.y * 900.0 + u.time * 2.0) * 0.1));
+        }
+    }
+    // the floor line
+    col += float3(0.25, 0.35, 0.3) * exp(-abs(p.y - floorY) / (px * 1.5)) * step(abs(p.x), W * 0.5) * 0.25;
+    // oscilloscope
+    float sy = 0.355, sa = 0.07;
+    if (abs(p.y - sy) < sa * 1.6 && abs(p.x) < W * 0.5) {
+        float d = 1e3;
+        float x = fx;
+        float dx = 1.5 / (W * u.res.y);
+        for (int k = -3; k <= 3; k++) {
+            float x0 = x + float(k) * dx;
+            float x1 = x0 + dx;
+            float2 a = float2((x0 - 0.5) * W, sy + sa * waveAt(waveTex, x0));
+            float2 b = float2((x1 - 0.5) * W, sy + sa * waveAt(waveTex, x1));
+            float2 ab = b - a, ap = p - a;
+            d = min(d, length(ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0)));
+        }
+        float3 phos = float3(0.35, 1.0, 0.75);
+        col += phos * (exp(-d * d / (px * px * 1.2)) * 1.6 + exp(-d / (px * 9.0)) * 0.18);
+        // graticule
+        float gx = abs(fract((p.x / W + 0.5) * 10.0) - 0.5) * W / 10.0;
+        col += float3(0.05, 0.12, 0.09) * (exp(-gx / px) + exp(-abs(p.y - sy) / px)) * 0.35;
+    }
+    // faint scanlines and a vignette of the panel
+    col *= 0.92 + 0.08 * sin(fc.y * 3.14159);
+    return float4(col, 1.0);
+}
+
+// ================================================================ Warp
+// MilkDrop-style: every frame a glowing waveform shape (a ring, a line or a
+// Lissajous figure, drifting between them) is drawn into the feedback buffer,
+// which zooms, turns and ripples it into tunnels of colour that change with
+// the music.
+
+static float warpSeg(float2 p, float2 a, float2 b) {
+    float2 ab = b - a, ap = p - a;
+    return length(ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0));
+}
+
+fragment float4 warpFragment(QuadOut in [[stage_in]],
+                             constant Uniforms &u [[buffer(0)]],
+                             texture2d<float> specTex [[texture(0)]],
+                             texture2d<float> waveTex [[texture(6)]]) {
+    float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
+    float px = 1.0 / u.res.y;
+    float t = u.time;
+    float cyc = t / 14.0;
+    float k = fract(cyc);
+    float shape = floor(cyc);
+    float mixT = smoothstep(0.8, 1.0, k);
+    // colours: the artwork's palette, drifting around the colour wheel
+    float3 hue = mix(pal(u, t * 0.03 + u.phase * 0.02), 0.5 + 0.5 * cos(6.2831853 * (t * 0.021 + float3(0.0, 0.33, 0.67))), 0.45);
+    float3 hue2 = mix(pal(u, t * 0.03 + 0.4), 0.5 + 0.5 * cos(6.2831853 * (t * 0.021 + 0.45 + float3(0.0, 0.33, 0.67))), 0.45);
+    float3 col = float3(0.0);
+    for (int s = 0; s < 2; s++) {
+        float which = fmod(shape + float(s), 3.0);
+        float wgt = s == 0 ? 1.0 - mixT : mixT;
+        if (wgt < 0.01) continue;
+        float d = 1e3;
+        if (which < 0.5) {
+            // a ring that breathes with the bass, its edge the waveform
+            float r = length(uv), a = atan2(uv.y, uv.x);
+            float x = a / 6.2831853 + 0.5;
+            float R = 0.17 + 0.05 * u.bass + 0.055 * waveAt(waveTex, x) * smoothstep(0.0, 0.06, min(x, 1.0 - x));
+            d = abs(r - R);
+        } else if (which < 1.5) {
+            // a horizontal trace, mirrored
+            float x = uv.x * 0.6 + 0.5;
+            float y = 0.12 * waveAt(waveTex, x) * smoothstep(0.0, 0.15, min(x, 1.0 - x));
+            d = min(abs(uv.y - y), abs(uv.y + y));
+        } else {
+            // a Lissajous figure: left against a quarter-turn later
+            float2 prev = float2(0.0);
+            for (int i = 0; i <= 48; i++) {
+                float x = float(i) / 48.0;
+                float2 q = 0.26 * float2(waveAt(waveTex, x), waveAt(waveTex, fract(x + 0.27)));
+                q = rot(t * 0.2) * q;
+                if (i > 0) d = min(d, warpSeg(uv, prev, q));
+                prev = q;
+            }
+        }
+        float w = px * (1.3 + 1.5 * u.beat);
+        col += mix(hue, hue2, 0.5 + 0.5 * sin(t * 0.7 + float(s))) * (exp(-d * d / (w * w)) * 1.4 + exp(-d / (px * 6.0)) * 0.12) * wgt;
+    }
+    // sparks on the treble
+    float2 g = uv * 18.0;
+    float2 gi = floor(g);
+    float h = hash2(gi + floor(t * 4.0));
+    col += hue2 * step(0.985 - u.treble * 0.02, h) * exp(-length(fract(g) - 0.5) * 8.0) * 2.0 * u.treble;
+    return float4(col, 1.0);
+}
+
 // ================================================================ Flow
 // MilkDrop-style: a glowing spectrum ring is drawn each frame; the feedback
 // pass zooms, swirls and fades it into rivers of light.
