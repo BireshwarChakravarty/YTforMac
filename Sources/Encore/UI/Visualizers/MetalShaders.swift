@@ -212,10 +212,10 @@ fragment float4 classicFragment(QuadOut in [[stage_in]],
     float aspect = u.res.x / u.res.y;
     float px = 1.0 / u.res.y;
     float3 col = mix(float3(0.006, 0.008, 0.012), float3(0.022, 0.026, 0.038), smoothstep(-0.5, 0.5, p.y));
-    col += float3(0.02, 0.04, 0.03) * exp(-pow(p.y + 0.3, 2.0) * 30.0);   // glow along the floor
+    col += float3(0.02, 0.04, 0.03) * exp(-pow(p.y + 0.06, 2.0) * 30.0);   // glow along the floor
     float W = min(aspect * 0.88, 1.75);
     float fx = (p.x + W * 0.5) / W;
-    float floorY = -0.31, topY = 0.24;
+    float floorY = -0.06, topY = 0.3;
     float N = floor(clamp(W * 26.0, 24.0, 48.0));
     if (fx > 0.0 && fx < 1.0) {
         float bi = floor(fx * N), bf = fract(fx * N);
@@ -243,7 +243,7 @@ fragment float4 classicFragment(QuadOut in [[stage_in]],
     // the floor line
     col += float3(0.25, 0.35, 0.3) * exp(-abs(p.y - floorY) / (px * 1.5)) * step(abs(p.x), W * 0.5) * 0.25;
     // oscilloscope
-    float sy = 0.355, sa = 0.07;
+    float sy = 0.395, sa = 0.055;
     if (abs(p.y - sy) < sa * 1.6 && abs(p.x) < W * 0.5) {
         float d = 1e3;
         float x = fx;
@@ -431,9 +431,12 @@ static float auroraCurtain(float2 p, float t) {
     float d1 = abs(p.y - (4.2 + wob * 0.7));
     float wob2 = fbm3(float2(p.x * 0.1 - t * 0.02, 8.3)) * 10.0;
     float d2 = abs(p.y - (8.0 + wob2 * 0.8));
-    float sheet = exp(-d1 * 1.6) + 0.6 * exp(-d2 * 1.2);
-    float rays = 0.45 + 0.55 * pow(gnoise(float2(p.x * 4.0 + wob * 0.6, t * 0.25)), 1.5);
-    float folds = 0.6 + 0.4 * sin(p.x * 0.8 + wob * 1.5 + t * 0.2);
+    float sheet = exp(-d1 * 1.8) + 0.55 * exp(-d2 * 1.3);
+    // fine vertical rays drifting along the curtain, shimmering
+    float r1 = gnoise(float2(p.x * 9.0 + wob * 0.8, t * 0.35));
+    float r2 = gnoise(float2(p.x * 31.0 - wob * 1.3, t * 0.9));
+    float rays = 0.18 + 0.82 * pow(r1, 2.6) * (0.55 + 0.45 * r2);
+    float folds = 0.55 + 0.45 * sin(p.x * 0.8 + wob * 1.5 + t * 0.2);
     return sheet * rays * folds;
 }
 static float3 auroraColor(float h) {
@@ -442,14 +445,22 @@ static float3 auroraColor(float h) {
     return mix(c, mix(red, violet, 0.4), smoothstep(0.45, 1.0, h));
 }
 static float3 auroraSky(float3 rd, float t, float jitter, constant Uniforms &u, texture2d<float> specTex) {
-    float3 c = mix(float3(0.010, 0.020, 0.045), float3(0.002, 0.004, 0.012), smoothstep(0.0, 0.6, rd.y));
-    float2 sp = rd.xz / max(rd.y + 0.15, 0.05) * 220.0;
-    float2 id = floor(sp); float2 f = fract(sp) - 0.5;
-    float h = hash2(id);
-    float star = step(0.985, h) * (1.0 - smoothstep(0.0, 0.08 + 0.06 * fract(h * 37.0), length(f))) * (0.6 + 0.4 * sin(u.time * (1.0 + h * 3.0) + h * 50.0));
-    c += mix(float3(0.7, 0.8, 1.0), float3(1.0, 0.9, 0.75), fract(h * 13.0)) * star * 1.4;
+    float3 c = mix(float3(0.012, 0.03, 0.05), float3(0.002, 0.004, 0.014), smoothstep(0.0, 0.55, rd.y));
+    c += float3(0.02, 0.06, 0.05) * exp(-rd.y * 14.0);                         // airglow on the horizon
+    // stars, denser along a faint band of the Milky Way
+    float band = exp(-pow((rd.x * 0.8 - rd.y + 0.35) * 3.2, 2.0));
+    c += float3(0.03, 0.03, 0.045) * band * fbm3(rd.xy * 9.0) * smoothstep(0.02, 0.2, rd.y);
+    for (int l = 0; l < 2; l++) {
+        float sc = l == 0 ? 220.0 : 480.0;
+        float2 sp = rd.xz / max(rd.y + 0.15, 0.05) * sc;
+        float2 id = floor(sp); float2 f = fract(sp) - 0.5;
+        float h = hash2(id + float(l) * 17.0);
+        float thr = l == 0 ? 0.985 : 0.975 - band * 0.05;
+        float star = step(thr, h) * (1.0 - smoothstep(0.0, 0.08 + 0.06 * fract(h * 37.0), length(f))) * (0.6 + 0.4 * sin(u.time * (1.0 + h * 3.0) + h * 50.0));
+        c += mix(float3(0.7, 0.8, 1.0), float3(1.0, 0.9, 0.75), fract(h * 13.0)) * star * (l == 0 ? 1.4 : 0.7);
+    }
     float3 acc = float3(0.0);
-    float energy = 0.55 + 0.9 * u.level + 0.6 * u.beat;
+    float energy = 0.6 + 0.9 * u.level + 0.7 * u.beat;
     for (int i = 0; i < 56; i++) {
         float fi = float(i) + jitter;
         float alt = 0.9 + fi * 0.06;
@@ -457,9 +468,11 @@ static float3 auroraSky(float3 rd, float t, float jitter, constant Uniforms &u, 
         float2 p = rd.xz * tt * 0.9 + float2(0.0, 2.0);
         float d = auroraCurtain(p, t);
         float s = spec(specTex, fract(p.x * 0.05 + 0.5));
-        acc += auroraColor(fi / 56.0) * d * exp(-fi * 0.05) * (0.6 + 0.8 * s);
+        // bright, sharp lower border fading upwards
+        float prof = exp(-fi * 0.06) * (0.35 + 0.65 * smoothstep(0.0, 3.0, fi)) + 0.6 * exp(-fi * 0.5);
+        acc += auroraColor(fi / 56.0) * d * prof * (0.55 + 0.9 * s);
     }
-    c += acc * 0.34 * energy * smoothstep(0.0, 0.08, rd.y);
+    c += acc * 0.6 * energy * smoothstep(0.0, 0.06, rd.y);
     return c;
 }
 
@@ -469,24 +482,48 @@ fragment float4 auroraFragment(QuadOut in [[stage_in]],
     float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
     float t = u.time * (0.6 + 0.4 * u.mid) + u.phase * 0.2;
     float jitter = hash2(floor(in.position.xy)) * 0.5;
-    float3 rd = normalize(float3(uv.x, uv.y + 0.36, 1.0));
+    float3 rd = normalize(float3(uv.x, uv.y + 0.27, 1.0));
     float3 col;
     if (rd.y > 0.0) {
         col = auroraSky(rd, t, jitter, u, specTex);
     } else {
         float3 rr = float3(rd.x, -rd.y, rd.z);
         rr.x += 0.003 * sin(uv.y * 160.0 + u.time * 1.5) * (1.0 + u.bass * 2.0);
-        col = auroraSky(rr, t, jitter, u, specTex) * 0.45 * smoothstep(-0.6, 0.0, rd.y) + float3(0.002, 0.004, 0.01);
+        col = auroraSky(rr, t, jitter, u, specTex) * 0.55 * smoothstep(-0.5, 0.0, rd.y) + float3(0.002, 0.004, 0.01);
     }
     float x = uv.x;
-    float hy = -0.36;
-    float ridge = 0.045 + 0.06 * gnoise(float2(x * 2.2, 0.0)) + 0.025 * gnoise(float2(x * 7.0, 3.0)) + 0.008 * gnoise(float2(x * 25.0, 1.0)) + hy;
-    float3 mountain = float3(0.006, 0.01, 0.018);
-    float m = (1.0 - smoothstep(ridge - 0.002, ridge + 0.002, uv.y)) * smoothstep(hy - 0.002, hy + 0.002, uv.y);
-    col = mix(col, mountain, m);
+    float hy = -0.27;
+    float px = 1.0 / u.res.y;
+    float ridge = 0.012 + 0.05 * pow(gnoise(float2(x * 1.8, 0.0)), 1.5) + 0.018 * gnoise(float2(x * 7.0, 3.0)) + 0.006 * gnoise(float2(x * 25.0, 1.0)) + hy;
+    // a line of pines along the far shore, in front of the mountains
+    float cell = 0.018;
+    float ci = floor(x / cell);
+    float pine = hy;
+    for (int k = -1; k <= 1; k++) {
+        float id = ci + float(k);
+        float h = hash1(id * 3.7);
+        float cx = (id + 0.5 + (h - 0.5) * 0.6) * cell;
+        float ht = 0.012 + 0.03 * fract(h * 17.0) * (0.4 + 0.6 * gnoise(float2(id * 0.15, 2.0)));
+        float w = ht * 0.32;
+        float top = hy + ht * (1.0 - abs(x - cx) / w);
+        pine = max(pine, top);
+    }
+    float3 mountain = float3(0.007, 0.012, 0.02);
+    float3 trees = float3(0.003, 0.005, 0.008);
+    float m = (1.0 - smoothstep(ridge - px, ridge + px, uv.y)) * smoothstep(hy - px, hy + px, uv.y);
+    col = mix(col, mountain + float3(0.01, 0.025, 0.02) * smoothstep(ridge - 0.03, ridge, uv.y), m);
+    float tm = (1.0 - smoothstep(pine - px, pine + px, uv.y)) * smoothstep(hy - px, hy + px, uv.y);
+    col = mix(col, trees, tm);
     float mirrorY = 2.0 * hy - uv.y;
-    float mr = (1.0 - smoothstep(ridge - 0.002, ridge + 0.002, mirrorY)) * (1.0 - smoothstep(hy - 0.002, hy + 0.002, uv.y));
+    float mr = (1.0 - smoothstep(ridge - px, ridge + px, mirrorY)) * (1.0 - smoothstep(hy - px, hy + px, uv.y));
     col = mix(col, mountain * 0.7, mr * 0.9);
+    float tr = (1.0 - smoothstep(pine - px, pine + px, mirrorY)) * (1.0 - smoothstep(hy - px, hy + px, uv.y));
+    col = mix(col, trees, tr * 0.95);
+    // ripples catching the light on the water
+    if (uv.y < hy) {
+        float rip = pow(gnoise(float2(uv.x * 6.0, uv.y * 220.0 + u.time * 0.8)), 6.0);
+        col += col * rip * 1.5 * smoothstep(hy - 0.3, hy, uv.y);
+    }
     return float4(col, 1.0);
 }
 
