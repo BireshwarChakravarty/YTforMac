@@ -10,11 +10,10 @@ enum PlaybackMode: String, CaseIterable, Identifiable, Codable {
 }
 
 enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
-    case flow, lyricPop, singAlong, cosmos, aurora, silk, drive, waves, halo, spectrum, tide, classic, warp
+    case drive, classic, warp, cosmos, aurora, halo, silk, waves, lyricPop, singAlong
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .flow: return "Flow"
         case .lyricPop: return "Lyric Pop"
         case .singAlong: return "Sing-Along"
         case .cosmos: return "Cosmos"
@@ -23,15 +22,12 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .drive: return "Night Drive"
         case .waves: return "Waves"
         case .halo: return "Halo"
-        case .spectrum: return "Spectrum"
-        case .tide: return "Tide"
         case .classic: return "Classic"
         case .warp: return "Warp"
         }
     }
     var symbol: String {
         switch self {
-        case .flow: return "tornado"
         case .lyricPop: return "quote.bubble.fill"
         case .singAlong: return "music.mic"
         case .cosmos: return "sparkles"
@@ -40,8 +36,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .drive: return "car.rear.fill"
         case .waves: return "waveform.path"
         case .halo: return "circle.dashed"
-        case .spectrum: return "waveform"
-        case .tide: return "water.waves"
         case .classic: return "chart.bar.fill"
         case .warp: return "hurricane"
         }
@@ -49,7 +43,6 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
     /// Short description shown in the picker.
     var caption: String {
         switch self {
-        case .flow: return "Rivers of light from the spectrum"
         case .lyricPop: return "Synced lyrics that burst in, word by word"
         case .singAlong: return "Scrolling karaoke lyrics, line by line"
         case .cosmos: return "A spiral galaxy in deep space"
@@ -58,16 +51,13 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .drive: return "A rainy night drive in a Creta"
         case .waves: return "A soft glow that listens, waves at its heart"
         case .halo: return "Artwork ringed by the spectrum"
-        case .spectrum: return "A smooth, mirrored waveform"
-        case .tide: return "A calm sea of light"
         case .classic: return "LED spectrum analyser and oscilloscope"
         case .warp: return "Tunnels of colour from the waveform"
         }
     }
-    /// GPU scenes run through the Metal pipeline; Spectrum uses SwiftUI Canvas.
+    /// Every style runs through the Metal pipeline.
     var metalScene: MetalScene? {
         switch self {
-        case .flow: return .flow
         case .lyricPop: return .calm
         case .singAlong: return .stage
         case .cosmos: return .cosmos
@@ -76,10 +66,8 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .drive: return .drive
         case .waves: return .waves
         case .halo: return .halo
-        case .tide: return .tide
         case .classic: return .classic
         case .warp: return .warp
-        case .spectrum: return nil
         }
     }
     var isGPU: Bool { metalScene != nil }
@@ -177,7 +165,7 @@ final class AppSettings {
             defaults.object(forKey: key) == nil ? fallback : defaults.double(forKey: key)
         }
         mode = string("mode", PlaybackMode.video)
-        visualizerStyle = string("visualizerStyle", VisualizerStyle.flow)
+        visualizerStyle = string("visualizerStyle", VisualizerStyle.drive)
         visualizerColors = string("visualizerColors", VisualizerColorSource.artwork)
         visualizerSensitivity = double("visualizerSensitivity", 1.0)
         visualizerUsesAudio = bool("visualizerUsesAudio", true)

@@ -51,6 +51,7 @@ struct PassParams {
 
 constexpr sampler linearSampler(coord::normalized, address::clamp_to_edge, filter::linear);
 constexpr sampler artSampler(coord::normalized, address::mirrored_repeat, filter::linear, mip_filter::linear);
+constexpr sampler spriteSampler(coord::normalized, address::clamp_to_edge, filter::linear, mip_filter::linear);
 
 static float hash1(float n) { return fract(sin(n) * 43758.5453123); }
 static float hash2(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
@@ -174,7 +175,7 @@ fragment float4 compositeFragment(QuadOut in [[stage_in]],
                                   texture2d<float> bloom [[texture(1)]]) {
     float2 uv = in.position.xy / pp.outSize;
     float2 d = uv - 0.5;
-    float ca = 0.0012 + u.beat * 0.0018;
+    float ca = (0.0012 + u.beat * 0.0018) * pp.rot;     // chromatic aberration (per scene; 0 for the painted cabin)
     float3 col = float3(src.sample(linearSampler, uv - d * ca).r, src.sample(linearSampler, uv).g, src.sample(linearSampler, uv + d * ca).b);
     col += bloom.sample(linearSampler, uv).rgb * pp.bloomAmt * 0.2;
     col *= pp.exposure;
@@ -331,42 +332,6 @@ fragment float4 warpFragment(QuadOut in [[stage_in]],
     return float4(col, 1.0);
 }
 
-// ================================================================ Flow
-// MilkDrop-style: a glowing spectrum ring is drawn each frame; the feedback
-// pass zooms, swirls and fades it into rivers of light.
-
-fragment float4 flowFragment(QuadOut in [[stage_in]],
-                             constant Uniforms &u [[buffer(0)]],
-                             texture2d<float> specTex [[texture(0)]],
-                             texture2d<float> waveTex [[texture(6)]]) {
-    float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
-    float px = 1.0 / u.res.y;
-    float r = length(uv), a = atan2(uv.y, uv.x);
-    float seg = abs(fract(a / (2.0 * M_PI_F) + 0.25) * 2.0 - 1.0);
-    float s = spec(specTex, seg * 0.85);
-    float3 col = float3(0.0);
-    // three strands of light: the spectrum, the waveform, and a slow echo
-    for (int k = 0; k < 3; k++) {
-        float fk = float(k);
-        float ringR;
-        if (k == 0) ringR = 0.15 + 0.10 * s + 0.03 * u.beat;
-        else if (k == 1) ringR = 0.22 + 0.035 * waveAt(waveTex, fract(a / (2.0 * M_PI_F) + 0.5)) * smoothstep(0.0, 0.08, min(seg, 1.0 - seg) + 0.04);
-        else ringR = 0.09 + 0.05 * s * s + 0.02 * sin(a * 3.0 + u.time * 0.7);
-        float d = abs(r - ringR);
-        float w = px * (1.2 + fk * 0.4);
-        float line = exp(-d * d / (w * w)) * (0.5 + 1.4 * s) + exp(-d / (px * 8.0)) * 0.12;
-        col += pal(u, seg * 0.6 + u.phase * 0.05 + fk * 0.22) * line * (k == 1 ? 0.4 : 0.5);
-    }
-    // orbiting motes that leave rivers in the feedback
-    for (int i = 0; i < 8; i++) {
-        float fi = float(i);
-        float2 sp = (0.1 + 0.03 * sin(fi * 2.1)) * float2(cos(u.time * (0.6 + fi * 0.11) + fi * 2.0), sin(u.time * (0.8 + fi * 0.09) + fi));
-        float dd = dot(uv - sp, uv - sp);
-        col += pal(u, fi / 8.0) * (exp(-dd / 0.00004) * 0.7 + exp(-dd / 0.0012) * 0.025) * (0.4 + u.treble);
-    }
-    return float4(col, 1.0);
-}
-
 // ================================================================ Halo
 // The artwork as a slowly turning record with a glossy label, on a glow of its
 // own colours, ringed by a radial spectrum of rounded bars with peak dots that
@@ -424,42 +389,6 @@ fragment float4 haloFragment(QuadOut in [[stage_in]],
         col += pal(u, 0.1) * exp(-abs(r - R * 1.1) / (px * 2.0)) * (0.4 + 0.8 * u.level);
     }
     return float4(col, 1.0);
-}
-
-// ================================================================ Tide
-// A sea of light points; the newest sound arrives in the foreground.
-
-fragment float4 tideBackground(QuadOut in [[stage_in]],
-                               constant Uniforms &u [[buffer(0)]],
-                               texture2d<float> specTex [[texture(0)]]) {
-    float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y;
-    float3 c = mix(u.shadow.rgb * 0.5, u.shadow.rgb * 0.9 + u.p2.rgb * 0.08, smoothstep(-0.5, 0.45, uv.y));
-    c += u.p1.rgb * 0.18 * exp(-abs(uv.y - 0.2) * 7.0) * (0.5 + u.level);
-    return float4(c, 1.0);
-}
-
-vertex PointOut tideVertex(uint vid [[vertex_id]],
-                           constant Uniforms &u [[buffer(0)]],
-                           texture2d<float> specTex [[texture(0)]],
-                           texture2d<float> hist [[texture(1)]]) {
-    float i = float(vid);
-    float cx = i - 220.0 * floor(i / 220.0), cz = floor(i / 220.0);
-    float uu = cx / 219.0, w = (cz + u.scroll) / 110.0;
-    float fx = abs(uu * 2.0 - 1.0);
-    float v = hist.sample(linearSampler, float2(fx * 0.8 + 0.03, clamp(w, 0.0, 1.0)), level(0)).r;
-    float x = (uu - 0.5) * 40.0, z = w * 70.0 + 2.0;
-    float y = sin(x * 0.22 + u.time * 0.5 + z * 0.09) * 0.55 + sin(z * 0.18 - u.time * 0.35 + x * 0.05) * 0.6;
-    y += pow(v, 1.4) * 6.5 * (1.0 - fx * 0.55);
-    float3 pw = float3(x, y, z) - float3(0.0, 7.0, -3.0);
-    float pitch = 0.36, cp = cos(pitch), sp = sin(pitch);
-    float3 pc = float3(pw.x, pw.y * cp + pw.z * sp, -pw.y * sp + pw.z * cp);
-    PointOut o;
-    o.position = float4(pc.x * 1.35 / (u.res.x / u.res.y), pc.y * 1.35, pc.z * 0.01, pc.z);
-    float depth = clamp(1.0 - w, 0.0, 1.0);
-    o.pointSize = max(1.0, (1.2 + v * 2.2) * (0.55 + depth * 1.25)) * u.dpr;
-    float3 col = mix(pal(u, 0.6 + uu * 0.25), pal(u, 0.05 + v * 0.6), smoothstep(0.1, 0.7, v));
-    o.color = col * (0.25 + v * v * 3.0 + u.beat * 0.3) * depth * depth;
-    return o;
 }
 
 // ================================================================ Aurora
@@ -1551,169 +1480,21 @@ static float nwCentre(float z, float c) { return 1.65 + c * z * z; }
 static float nwLeafNoise(float2 q) { return gnoise(q) * 0.6 + gnoise(q * 2.3 + 7.0) * 0.4; }
 
 // ---------------------------------------------------------------- far away
-static float3 nwSky(float bx, float y, float t) {
-    float yy = max(y, 0.0);
-    float3 col = mix(float3(0.17, 0.26, 0.50), float3(0.08, 0.14, 0.36), smoothstep(0.0, 0.12, yy));
-    col = mix(col, float3(0.025, 0.05, 0.17), smoothstep(0.10, 0.34, yy));
-    float2 mp = float2(0.72, 0.24);
-    float2 dm = float2(bx, y) - mp;
-    float md = length(dm);
-    col += float3(0.32, 0.36, 0.5) * exp(-md * 9.0) * 0.45 + float3(0.6, 0.6, 0.62) * exp(-md * 45.0) * 0.35;
-    // stars: many, small, of different brightness
-    for (int l = 0; l < 2; l++) {
-        float sc = l == 0 ? 210.0 : 420.0;
-        float2 sg = float2(bx, y) * sc;
-        float2 si = floor(sg);
-        float sh = hash2(si + float(l) * 31.0);
-        float2 so = float2(hash2(si + 3.1), hash2(si + 7.7)) * 0.6 + 0.2;
-        float star = step(l == 0 ? 0.975 : 0.955, sh) * (1.0 - smoothstep(0.03, l == 0 ? 0.16 : 0.1, length(fract(sg) - so)));
-        star *= (0.5 + 0.5 * sin(t * (0.6 + 2.0 * fract(sh * 91.0)) + sh * 60.0)) * (l == 0 ? 1.0 : 0.55);
-        col += float3(0.85, 0.88, 1.0) * star * smoothstep(0.02, 0.1, yy);
-    }
-    // wispy clouds, silvered near the moon
-    float2 cp = float2(bx * 1.6 + t * 0.0025, yy * 7.5);
-    float cl = fbm3(cp + float2(fbm3(cp * 2.0) * 0.6, 0.0));
-    float streak = fbm3(float2(bx * 0.9 + t * 0.002, yy * 26.0));
-    float cm = smoothstep(0.52, 0.75, cl * 0.6 + streak * 0.5) * smoothstep(0.04, 0.12, yy) * (1.0 - smoothstep(0.30, 0.42, yy));
-    float3 cloud = mix(float3(0.16, 0.22, 0.42), float3(0.62, 0.64, 0.76), clamp(exp(-md * 3.5) * 1.3, 0.0, 1.0));
-    col = mix(col, cloud, cm * 0.75);
-    // the moon
-    float disc = 1.0 - smoothstep(0.0215, 0.0235, md);
-    float3 moon = float3(1.0, 0.95, 0.8) * (0.9 + 0.1 * fbm3(dm * 160.0 + 3.0));
-    col = mix(col, moon, disc);
-    return col;
-}
-
-// Sky, mountains, valley mist and the far shore's lights in direction (bx, y).
-// `refl` > 0 when seen mirrored in the lake: lights stretch into long streaks.
-static float3 nwFar(float bx, float y, float t, float refl) {
-    float3 col = nwSky(bx, y, t);
-    float3 mist = float3(0.58, 0.63, 0.80);
-    for (int i = 0; i < 3; i++) {
-        float fi = float(i);
-        float k = 2.2 + fi * 1.3;
-        float xb = bx * k + fi * 7.3;
-        float r1 = 1.0 - abs(gnoise(float2(xb, fi * 3.1)) * 2.0 - 1.0);
-        float r2 = 1.0 - abs(gnoise(float2(xb * 2.3 + 1.7, fi)) * 2.0 - 1.0);
-        float n = fbm3(float2(xb * 0.45, fi * 5.0));
-        float shape = (r1 * r1 * 0.6 + r2 * r2 * 0.18) * (1.0 - fi * 0.35) + n * 0.5;
-        float top = (0.035 - fi * 0.012) + (0.105 - fi * 0.033) * shape;
-        top = max(top, 0.004);
-        if (y < top) {
-            float3 rc = i == 0 ? float3(0.12, 0.165, 0.33) : (i == 1 ? float3(0.065, 0.105, 0.225) : float3(0.032, 0.058, 0.12));
-            float tex = fbm3(float2(bx * (60.0 + fi * 60.0), y * (90.0 + fi * 80.0)));
-            rc *= 0.82 + 0.36 * tex;
-            // moonlit faces (the moon is to the right) and a bright ridgeline
-            float xr = (bx + 0.003) * k + fi * 7.3;
-            float r1b = 1.0 - abs(gnoise(float2(xr, fi * 3.1)) * 2.0 - 1.0);
-            float slope = (r1b * r1b - r1 * r1) * 0.6;
-            rc += float3(0.08, 0.10, 0.16) * smoothstep(0.0, 0.05, -slope) * (1.0 - fi * 0.3) * smoothstep(top - 0.05, top, y);
-            rc += float3(0.06, 0.07, 0.1) * smoothstep(top - 0.004, top, y) * (1.0 - fi * 0.4);
-            col = rc;
-        }
-        // mist lying in front of this range's foot
-        float mb = (0.05 - fi * 0.018);
-        float drift = fbm3(float2(bx * 3.0 - t * 0.008 + fi * 3.0, y * 55.0 + fi));
-        float wisps = fbm3(float2(bx * 9.0 - t * 0.012 + fi, y * 140.0));
-        float band = exp(-pow((y - mb) / (0.0055 + 0.002 * fi), 2.0)) * smoothstep(0.42, 0.8, drift * 0.6 + wisps * 0.55);
-        col = mix(col, mist * (0.9 - fi * 0.12), clamp(band * (0.8 - fi * 0.15), 0.0, 1.0));
-    }
-    // houses and lamps along the far shore
-    float cw = 0.010;
-    float id = floor(bx / cw);
-    float h = hash1(id * 7.13 + 3.0);
-    if (h > 0.55) {
-        float lx = (id + 0.25 + 0.5 * fract(h * 13.0)) * cw;
-        float ly = 0.0012 + 0.0035 * fract(h * 29.0);
-        float2 d = float2((bx - lx) * (1.0 + refl * 0.5), (y - ly) / (1.0 + refl * 18.0));
-        float g = exp(-length(d) / 0.0006) + 0.25 * exp(-length(d) / 0.0028);
-        col += float3(1.0, 0.74, 0.42) * g * (1.0 - refl * 0.3);
-    }
-    return col;
-}
-
-// ---------------------------------------------------------------- trees
-// A broadleaf tree seen as a billboard, in metres (q.x across, q.y up from its
-// foot). Returns coverage; `shade` gets lighting inputs (x: facing the lamp
-// side, y: facing up; z < -0.5 marks the trunk).
-static float nwTreeShape(float2 q, float R, float trunkH, float seed, float leafy, thread float3 &shade) {
-    // the crown's envelope: a few big overlapping masses
-    float env = 9.0;
-    float2 envN = float2(0.0, 1.0);
-    for (int k = 0; k < 5; k++) {
-        float fk = float(k);
-        float a = fk * 1.13 + seed * 5.0;
-        float2 c = float2((fract(sin(a * 3.7) * 43.1) - 0.5) * 1.5 * R, trunkH + R * (0.5 + 0.6 * fract(sin(a * 7.1) * 17.3)));
-        if (k == 0) c = float2(0.0, trunkH + R * 0.85);
-        float r = R * (0.5 + 0.22 * fract(sin(a * 5.3) * 29.1));
-        float de = length((q - c) * float2(1.0, 1.15)) / r;
-        if (de < env) { env = de; envN = (q - c) / r; }
-    }
-    // leaf clumps: discs on a jittered grid, kept where their centre is inside
-    float cell = 0.55 + 0.25 * R / 4.0;
-    float2 g = q / cell;
-    float2 gi = floor(g);
-    float bestD = 9.0;
-    float2 bestN = float2(0.0);
-    float bestH = 0.0;
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-            float2 id = gi + float2(float(i), float(j));
-            float h1 = hash2(id + seed);
-            float2 cc = (id + 0.5 + (float2(h1, hash2(id + seed + 4.7)) - 0.5) * 0.8) * cell;
-            float r = cell * (0.62 + 0.3 * hash2(id + seed + 9.1));
-            // the clump's centre must sit inside the envelope (edges scalloped)
-            float2 dq = q - cc;
-            float d = length(dq * float2(1.0, 1.25)) / r;
-            if (d < 1.0 && d < bestD + 0.25 * (h1 - 0.5)) {
-                // nearer-the-viewer clumps (higher hash) drawn over the others
-                bestD = d; bestN = dq / r; bestH = h1;
-            }
-        }
-    }
-    float inside = 1.0 - smoothstep(0.92, 1.08, env + (bestH - 0.5) * 0.25);
-    float crownEdge = 1.0 - smoothstep(0.86, 1.0, bestD);
-    float crown = inside * crownEdge;
-    // a solid core so the crown never looks see-through
-    crown = max(crown, 1.0 - smoothstep(0.7, 0.8, env));
-    float leaf = nwLeafNoise(q * 3.0 + seed * 9.0);
-    // trunk and two limbs
-    float tw = 0.12 + 0.03 * R;
-    float trunk = 1.0 - smoothstep(tw * 0.75, tw, abs(q.x - 0.12 * sin(q.y * 0.7 + seed)));
-    trunk *= step(0.0, q.y) * step(q.y, trunkH + R * 0.8);
-    float limb = 0.0;
-    for (int j = 0; j < 2; j++) {
-        float sgn = j == 0 ? -1.0 : 1.0;
-        float2 a0 = float2(0.0, trunkH * 0.8);
-        float2 a1 = float2(sgn * R * (0.35 + 0.3 * fract(seed * (3.0 + float(j)))), trunkH + R * 0.6);
-        float2 ab = a1 - a0;
-        float2 ap = q - a0;
-        float dl = length(ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0));
-        limb = max(limb, 1.0 - smoothstep(tw * 0.3, tw * 0.55, dl));
-    }
-    float wood = max(trunk, limb);
-    // light the crown as whole masses; clumps add a little relief at the edges
-    float2 n2 = envN * 0.8 + bestN * 0.35 * step(bestD, 1.0);
-    shade = float3(n2.x, n2.y, clamp(0.35 + 0.5 * leaf + 0.15 * bestH - 0.25 * smoothstep(0.7, 1.0, bestD), 0.0, 1.0));
-    if (crown < 0.5 && wood > 0.0) { shade = float3(0.0, 0.0, -1.0); return wood; }
-    return crown;
-}
-
-static float3 nwTreeColour(float3 shade, float lamp, float lampSide) {
-    if (shade.z < -0.5) {
-        return float3(0.05, 0.04, 0.04) + float3(0.30, 0.19, 0.10) * min(lamp, 1.0) * 0.5;
-    }
-    float v = shade.z;
-    float up = shade.y, side = shade.x * lampSide;
-    float lit = clamp(0.5 + 0.55 * up + 0.2 * shade.x, 0.0, 1.0) * (0.75 + 0.5 * v);
-    float3 col = mix(float3(0.02, 0.05, 0.055), float3(0.055, 0.12, 0.105), smoothstep(0.25, 0.55, lit));
-    col = mix(col, float3(0.12, 0.21, 0.23), smoothstep(0.72, 0.9, lit) * 0.75);
-    // lamplight: clumps facing the lamp turn yellow-green, gold nearest it
-    float face = clamp(0.5 + 0.55 * side + 0.25 * up, 0.0, 1.2) * (0.7 + 0.5 * v);
-    float ll = clamp(lamp, 0.0, 1.6) * face;
-    float3 warmLeaf = mix(float3(0.30, 0.34, 0.12), float3(0.86, 0.74, 0.32), smoothstep(0.55, 1.1, ll));
-    col = mix(col, warmLeaf, smoothstep(0.22, 0.6, ll));
-    return col;
+// The sky, the moon, the misty mountains and the lake are a painted panorama
+// (Resources/NightDrive/drive-sky.jpg, made in Canva), mapped onto the view by
+// direction: horizon at v = 0.58, so the mountains stand at the right height
+// above the painted road's vanishing point. A little mist drifts across it.
+static float3 nwPano(float bx, float y, float t, texture2d<float> sky) {
+    float2 uv = float2(0.5 + bx * 0.55, 0.58 - y * 1.6);
+    float3 c = sky.sample(artSampler, uv).rgb;
+    float band = exp(-pow((y - 0.025) / 0.03, 2.0));
+    float mist = smoothstep(0.5, 0.85, fbm3(float2(bx * 3.0 - t * 0.012, y * 40.0)));
+    c = mix(c, float3(0.55, 0.62, 0.82), band * mist * 0.12);
+    // a few stars twinkle
+    float lum = dot(c, float3(0.3, 0.5, 0.2));
+    float awayFromMoon = smoothstep(0.05, 0.08, length((uv - float2(0.869, 0.131)) * float2(2.0, 1.0)));
+    c *= 1.0 + smoothstep(0.55, 0.85, lum) * step(0.08, y) * awayFromMoon * 0.3 * sin(t * 2.3 + hash2(floor(uv * 900.0)) * 40.0);
+    return c;
 }
 
 // Light from the street lamps reaching a point (s along the road, u across, h up).
@@ -1730,7 +1511,8 @@ static float nwLampLight(float s, float u, float h) {
 }
 
 // ---------------------------------------------------------------- the scene
-static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
+static float3 nwWorld(float2 ip, float t, float bass, float pxs,
+                      texture2d<float> sky, texture2d<float> trees, texture2d<float> treesA) {
     float x = (ip.x - NW_VX) / NW_F;
     float y = (NW_HZ - ip.y) / NW_F;
     float dist = t * NW_SPEED;
@@ -1740,14 +1522,14 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
     float3 haze = float3(0.15, 0.21, 0.38);
     float3 emit = float3(0.0);
     float zHit = 100000.0;
-    float3 col = nwFar(bx, y, t, 0.0);
+    float3 col = nwPano(bx, y, t, sky);
     float roadZ = -1.0;          // depth of the road surface at this pixel (for reflections)
 
     // ---- the ground: road, verges, the hillside on the left, the lake ----
     float zg = y < -0.0002 ? NW_CAMH / (-y) : 100000.0;
-    float u = x * zg - nwCentre(zg, c);
-    if (u < -5.6) {
-        // the hillside rising from the verge: h = k (-u - 5.6), up to 14 m
+    float u = y < -0.0002 ? x * zg - nwCentre(zg, c) : -100.0;
+    {
+        // the hillside rising from the left verge: h = k (-u - 5.6), up to 14 m
         float k = 0.62;
         float a = k * c;
         float b = -(k * x + y);
@@ -1756,7 +1538,7 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
         if (disc > 0.0 && b > 0.0) {
             float zs = 2.0 * cc / (-b - sqrt(disc));
             float us = x * zs - nwCentre(zs, c);
-            if (zs > 0.3 && zs < zg && (-us - 5.6) * k < 14.0) { zg = zs; u = us; }
+            if (zs > 0.3 && zs < zg && us < -5.6 && (-us - 5.6) * k < 14.0) { zg = zs; u = us; }
         }
     }
     if (zg < 99999.0) {
@@ -1768,14 +1550,9 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
         float lampL = nwLampLight(s, u, h);
         zHit = zg;
         if (u > 6.2) {
-            // the lake
+            // the lake: the painted water and its reflections, rippling gently
             float rip = fbm3(float2(u * 0.2 + t * 0.03, s * 0.08 + t * 0.15)) - 0.5;
-            float3 refl = nwFar(bx + rip * 0.004, -y + rip * 0.0012, t, 1.0);
-            float fres = mix(0.5, 0.92, exp(y * 30.0));
-            col = mix(float3(0.02, 0.04, 0.09), refl * float3(0.82, 0.88, 1.0), fres);
-            col += float3(0.25, 0.3, 0.45) * smoothstep(0.62, 0.8, gnoise(float2(bx * 40.0, y * 900.0 + t * 0.6))) * 0.25 * exp(y * 15.0);
-            float g = gnoise(float2(bx * 380.0, y * 1500.0 + t * 1.2));
-            col += float3(0.7, 0.68, 0.6) * pow(g, 9.0) * exp(-abs(bx - 0.72) * 18.0) * 1.8;
+            col = nwPano(bx + rip * 0.004, y + rip * 0.0015, t, sky);
         } else if (u < -5.6) {
             // grass, shrubs and rocks on the slope, gold under the lamps
             float2 g = float2(s * 0.6, h * 1.6);
@@ -1829,18 +1606,23 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
             if (zt < 1.0) continue;
             float ut = rowU + (fract(hh * 23.0) - 0.5) * (row == 1 ? 4.0 : 1.6);
             float hb = ut < -5.6 ? (-ut - 5.6) * 0.62 : 0.0;
-            float R = (row == 2 ? 2.6 : 3.4) + 1.8 * fract(hh * 31.0);
-            float trunkH = 2.2 + 1.2 * fract(hh * 41.0) + (row == 2 ? 0.0 : 0.8);
+            float Hm = (row == 2 ? 8.0 : 10.0) + 3.5 * fract(hh * 31.0);
+            float Wm = Hm * 0.78;
             float X = (ut + nwCentre(zt, c)) / zt;
             float2 q = float2((x - X) * zt, y * zt + NW_CAMH - hb);
-            if (abs(q.x) > R * 1.8 || q.y < -0.2 || q.y > trunkH + R * 2.0) continue;
+            if (abs(q.x) > Wm * 0.5 || q.y < 0.0 || q.y > Hm) continue;
             if (zt > zHit) continue;
-            float3 shade;
-            float cov = nwTreeShape(q, R, trunkH, hh * 10.0, 1.0 / (1.0 + zt / 50.0), shade);
+            // one of two painted trees, turned so its lamplit side faces the road
+            float k = step(0.5, fract(hh * 7.0));
+            bool flip = (k < 0.5) == (ut < 0.0);
+            float tu = q.x / Wm + 0.5;
+            if (flip) tu = 1.0 - tu;
+            float2 tuv = float2((k + clamp(tu, 0.002, 0.998)) * 0.5, clamp(1.0 - q.y / Hm, 0.0, 1.0));
+            float cov = treesA.sample(spriteSampler, tuv).r;
             if (cov < 0.01) continue;
-            float lamp = nwLampLight(st, ut, hb + trunkH + R);
-            float lampSide = ut < -3.4 ? 1.0 : -1.0;
-            float3 tc = nwTreeColour(shade, lamp, lampSide);
+            float3 tc = trees.sample(spriteSampler, tuv).rgb;
+            float lamp = nwLampLight(st, ut, hb + Hm * 0.6);
+            tc *= 0.5 + 0.6 * clamp(lamp, 0.0, 1.2);
             tc = mix(tc, haze * 0.85, 1.0 - exp(-zt / (row == 1 ? 150.0 : 200.0)));
             col = mix(col, tc, cov);
             if (cov > 0.5) { zHit = zt; roadZ = -1.0; }
@@ -1932,8 +1714,76 @@ static float nwLampPass(float t) {
 }
 
 
+// ---- the instrument cluster: a 10.25-inch digital display behind the wheel,
+// a tachometer on the left and the speedometer on the right, with glowing
+// sweep arcs, ticks and needles that follow the drive (45 km/h, give or take).
+static float pdNwSpeed(float t) { return 45.0 + 1.5 * sin(t * 0.05) + 0.8 * sin(t * 0.23); }
+
+static float3 pdDial(float2 ip, float2 c, float R, float v, float majors, float redFrom, float3 col) {
+    float2 d = ip - c;
+    float r = length(d);
+    if (r > R + 6.0) return col;
+    float ang = atan2(-d.y, d.x);                         // y up
+    // position along the 270-degree sweep (0 at bottom left, 1 at bottom right)
+    float a = 3.92699 - ang;                              // 225 degrees
+    a = a - 6.2831853 * floor(a / 6.2831853);
+    float f = a / 4.712389;
+    float inSweep = step(f, 1.0);
+    // face
+    col = mix(col, float3(0.012, 0.02, 0.04) + float3(0.02, 0.05, 0.08) * (1.0 - r / R), 1.0 - smoothstep(R - 1.0, R + 0.5, r));
+    // outer ring
+    col += float3(0.25, 0.45, 0.6) * exp(-pow(r - R, 2.0) / 0.8) * 0.5;
+    // ticks
+    float n = majors * 5.0;
+    float tf = f * n;
+    float tick = abs(fract(tf + 0.5) - 0.5) * (4.712389 * r / n);  // distance to nearest tick, px
+    bool major = abs(fract(tf / 5.0 + 0.1) - 0.1) < 0.02;
+    float tl = major ? 9.0 : 4.5;
+    float tw = major ? 1.1 : 0.6;
+    float tm = (1.0 - smoothstep(tw - 0.6, tw + 0.6, tick)) * step(R - 3.0 - tl, r) * step(r, R - 3.0) * inSweep;
+    float3 tickCol = f > redFrom ? float3(1.0, 0.3, 0.25) : float3(0.75, 0.85, 0.95);
+    col = mix(col, tickCol, tm * (major ? 0.95 : 0.6));
+    // the glowing sweep arc up to the value
+    float band = exp(-pow(r - (R - 1.5), 2.0) / 2.5) * step(f, v) * inSweep;
+    float3 arcCol = mix(float3(0.1, 0.6, 1.0), float3(0.55, 0.95, 1.0), f);
+    col += arcCol * band * 1.4;
+    col += arcCol * exp(-abs(r - (R - 1.5)) / 6.0) * step(f, v) * inSweep * 0.12;
+    // needle
+    float na = 3.92699 - v * 4.712389;
+    float2 nd = float2(cos(na), -sin(na));
+    float along = dot(d, nd);
+    float across = abs(d.x * nd.y - d.y * nd.x);
+    float needle = (1.0 - smoothstep(0.6, 1.6, across - (1.0 - along / R) * 0.8)) * step(-R * 0.12, along) * step(along, R - 6.0);
+    col = mix(col, float3(1.0, 0.42, 0.22) * 1.6, needle);
+    col += float3(1.0, 0.4, 0.2) * exp(-across / 2.5) * step(0.0, along) * step(along, R - 6.0) * 0.15;
+    // hub
+    float hub = 1.0 - smoothstep(5.0, 6.2, r);
+    col = mix(col, float3(0.05, 0.06, 0.08) + float3(0.25, 0.3, 0.35) * exp(-pow(r - 5.0, 2.0)), hub);
+    return col;
+}
+
+static float3 pdCluster(float2 ip, float3 col, float t, float bass) {
+    float panel = sdBox(ip - float2(1405.0, 486.0), float2(208.0, 78.0), 16.0);
+    if (panel > 3.0) return col;
+    float m = 1.0 - smoothstep(-1.0, 1.0, panel);
+    float3 bg = mix(float3(0.006, 0.01, 0.022), float3(0.015, 0.025, 0.05), smoothstep(564.0, 408.0, ip.y));
+    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - float2(1276.0, 480.0)) / 60.0);
+    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - float2(1534.0, 480.0)) / 60.0);
+    // a thin line under the top edge, and the road graphic in the middle
+    bg += float3(0.1, 0.35, 0.5) * exp(-abs(ip.y - 414.0) / 0.8) * step(abs(ip.x - 1405.0), 120.0) * 0.4;
+    float speed = pdNwSpeed(t);
+    float rpm = 1450.0 + speed * 9.0 + 220.0 * bass + 60.0 * sin(t * 1.7);
+    bg = pdDial(ip, float2(1276.0, 482.0), 60.0, rpm / 8000.0, 8.0, 0.75, bg);
+    bg = pdDial(ip, float2(1534.0, 482.0), 60.0, speed / 220.0, 11.0, 2.0, bg);
+    // bezel
+    bg += float3(0.25, 0.3, 0.38) * exp(-abs(panel + 1.0) / 0.9) * 0.35;
+    return mix(col, bg, m);
+}
+
 static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
-                      texture2d<float> cabin, texture2d<float> masks2) {
+                      texture2d<float> cabin, texture2d<float> masks2,
+                      texture2d<float> sky, texture2d<float> trees, texture2d<float> treesA,
+                      texture2d<float> wheel, texture2d<float> wheelA) {
     float2 sz = float2(PD_W, PD_H);
     float s = max(u.res.x / PD_W, u.res.y / PD_H);
     float2 o = (u.res - sz * s) * 0.5;
@@ -1951,13 +1801,15 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
         float since = drvWipe(wp, t, blade);
         float3 r = driveRain(wp, t, since);
         float2 refr = float2(r.x, -r.y) * PD_H;
-        view = nwWorld(ip + refr * 2.5, t, u.bass, pxs);
+        view = nwWorld(ip + refr * 2.5, t, u.bass, pxs, sky, trees, treesA);
         if (r.z > 0.01) {
-            float3 sharp = nwWorld(ip - refr * 5.0, t, u.bass, pxs);
+            float3 sharp = nwWorld(ip - refr * 5.0, t, u.bass, pxs, sky, trees, treesA);
             view = mix(view, sharp * 1.1 + 0.015, r.z * 0.7);
         }
         view *= 0.94 + 0.06 * (1.0 - r.z);
-        view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
+        // the blades only while they sweep (parked, they sit below the bonnet line)
+        float sweeping = step(t - 7.0 * floor(t / 7.0), 1.32);
+        view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95 * sweeping);
     }
 
     // the painted cabin, lit by the lamps going by
@@ -1985,11 +1837,23 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
         sbg += barCol * colBar * step(q.y, barTop) * 0.9 + barCol * colBar * exp(-max(q.y - barTop, 0.0) * 25.0) * 0.1;
         lit = mix(lit, sbg * 1.25, 1.0 - smoothstep(-1.0, 1.0, scr));
     }
-    // a clean panel between the dials for the live speed (drawn natively)
-    float cpanel = sdBox(ip - float2(1378.0, 490.0), float2(50.0, 40.0), 12.0);
-    lit = mix(lit, float3(0.01, 0.018, 0.04), (1.0 - smoothstep(-3.0, 3.0, cpanel)) * 0.96);
+    // the digital instrument cluster, live (the digits in the middle are drawn natively)
+    lit = pdCluster(ip, lit, t, u.bass);
     lit *= 1.0 + 0.06 * u.beat * smoothstep(80.0, 0.0, abs(ip.y - 490.0));       // screens breathe on the beat
     float3 col = mix(lit, view, glass);
+    // the steering wheel, turning with the road
+    float steer = clamp(nwCurve(t) * 310.0, -0.26, 0.26) + 0.008 * sin(t * 0.6);
+    float2 wc = float2(1426.5, 583.0);
+    float2 rel = ip - wc;
+    float cs = cos(steer), sn = sin(steer);
+    float2 wp2 = float2(cs * rel.x + sn * rel.y, -sn * rel.x + cs * rel.y) + wc - float2(1140.0, 326.0);
+    float2 wuv = wp2 / float2(574.0, 516.0);
+    if (wuv.x > 0.0 && wuv.y > 0.0 && wuv.x < 1.0 && wuv.y < 1.0) {
+        float wa = wheelA.sample(linearSampler, wuv).r;
+        float3 wcol = pdUntonemap(wheel.sample(linearSampler, wuv).rgb);
+        wcol *= 1.0 + float3(1.0, 0.66, 0.36) * pass * 0.35 * fromLeft;
+        col = mix(col, wcol, wa);
+    }
     float outside = min(step(ip.x, 0.0) + step(PD_W, ip.x) + step(ip.y, 0.0) + step(PD_H, ip.y), 1.0);
     col = mix(col, float3(0.012, 0.013, 0.02), outside);
     return float4(col, 1.0);
@@ -1999,9 +1863,14 @@ fragment float4 driveFragment(QuadOut in [[stage_in]],
                               constant Uniforms &u [[buffer(0)]],
                               texture2d<float> specTex [[texture(0)]],
                               texture2d<float> cabin [[texture(3)]],
-                              texture2d<float> masks2 [[texture(4)]]) {
+                              texture2d<float> masks2 [[texture(4)]],
+                              texture2d<float> sky [[texture(5)]],
+                              texture2d<float> trees [[texture(8)]],
+                              texture2d<float> treesA [[texture(9)]],
+                              texture2d<float> wheel [[texture(10)]],
+                              texture2d<float> wheelA [[texture(11)]]) {
     float2 fc = fragCoord(in.position, u);
-    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, cabin, masks2);
+    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, cabin, masks2, sky, trees, treesA, wheel, wheelA);
     return lofiScene(fc, u, specTex);
 }
 

@@ -11,11 +11,14 @@ struct MainView: View {
             if model.immersive {
                 ImmersiveView()
                     .ignoresSafeArea()
-                    .toolbar(.hidden, for: .windowToolbar)
             } else {
                 splitView
             }
         }
+        // Set explicitly both ways: hiding it only inside the full-screen view
+        // could leave the toolbar (and its Video / Audio switch) hidden after
+        // leaving full screen.
+        .toolbar(model.immersive ? .hidden : .visible, for: .windowToolbar)
         .frame(minWidth: 940, minHeight: 600)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
             if model.immersive { withAnimation { model.immersive = false } }

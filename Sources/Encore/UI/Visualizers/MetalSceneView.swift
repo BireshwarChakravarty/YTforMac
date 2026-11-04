@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The GPU-rendered visualiser scenes and how each one uses the pipeline.
 enum MetalScene: String {
-    case flow, cosmos, aurora, silk, halo, waves, drive, tide, classic, warp
+    case cosmos, aurora, silk, halo, waves, drive, classic, warp
     /// The quiet dusk behind Lyric Pop.
     case calm
     /// A dimmer, slower Silk: the backdrop for lyrics.
@@ -23,6 +23,7 @@ enum MetalScene: String {
         var threshold: Float = 0.6
         var bloom: Float = 0.8
         var exposure: Float = 1
+        var chroma: Float = 1           // composite: chromatic aberration amount
     }
 
     /// Render-resolution cap. Soft, volumetric scenes look identical at a lower
@@ -31,16 +32,13 @@ enum MetalScene: String {
         switch self {
         case .aurora: return 1200
         case .silk, .stage, .calm: return 1100
-        case .drive: return 1500
+        case .drive: return 2400
         default: return 2000
         }
     }
 
     var config: Config {
         switch self {
-        case .flow:
-            return Config(fragment: "flowFragment", decay: 0.965, zoom: 1.012, zoomBass: 0.018, rot: 0.0045, warp: 0.9,
-                          threshold: 0.6, bloom: 0.9, exposure: 1.0)
         case .cosmos:
             return Config(background: "cosmosBackground", pointVertex: "cosmosVertex", pointCount: 90_000,
                           decay: 0.55, maxMode: 1, threshold: 0.7, bloom: 0.9, exposure: 1.05)
@@ -56,7 +54,7 @@ enum MetalScene: String {
         case .waves:
             return Config(fragment: "wavesFragment", threshold: 0.85, bloom: 0.6, exposure: 1.0)
         case .drive:
-            return Config(fragment: "driveFragment", threshold: 0.75, bloom: 0.9, exposure: 1.05)
+            return Config(fragment: "driveFragment", threshold: 0.85, bloom: 0.6, exposure: 1.05, chroma: 0)
         case .calm:
             return Config(fragment: "calmFragment", threshold: 0.9, bloom: 0.5, exposure: 1.0)
         case .classic:
@@ -64,9 +62,6 @@ enum MetalScene: String {
         case .warp:
             return Config(fragment: "warpFragment", decay: 0.97, zoom: 1.022, zoomBass: 0.03, rot: 0.01, warp: 1.4, maxMode: 1,
                           threshold: 0.6, bloom: 0.9, exposure: 1.0)
-        case .tide:
-            return Config(background: "tideBackground", pointVertex: "tideVertex", pointCount: 220 * 110,
-                          decay: 0.6, maxMode: 1, threshold: 0.6, bloom: 0.9, exposure: 1.1)
         }
     }
 }
@@ -163,24 +158,30 @@ final class MetalContext {
         }
     }
 
-    /// Night Drive's painted Creta cabin and its mask (red: cabin, the rest is
-    /// glass), bound at texture slots 3 and 4. Nil if they aren't bundled.
-    private(set) lazy var nightDrive: [MTLTexture]? = {
+    /// Night Drive's art, as (texture, fragment slot): the painted Creta cabin
+    /// and its glass mask, the painted panorama outside, and the painted trees
+    /// (colour and alpha kept apart so nothing is premultiplied). Nil if any is
+    /// missing from the bundle.
+    private(set) lazy var nightDrive: [(MTLTexture, Int)]? = {
         guard let loader = textureLoader else { return nil }
-        let names = ["drive-cabin.jpg", "drive-masks2.png"]
-        var textures: [MTLTexture] = []
-        for name in names {
+        let files: [(String, Int, Bool)] = [
+            ("drive-cabin.jpg", 3, false), ("drive-masks2.png", 4, false), ("drive-sky.jpg", 5, true),
+            ("drive-trees.jpg", 8, true), ("drive-trees-alpha.png", 9, true),
+            ("drive-wheel.jpg", 10, false), ("drive-wheel-alpha.png", 11, false),
+        ]
+        var textures: [(MTLTexture, Int)] = []
+        for (name, slot, mips) in files {
             let parts = name.split(separator: ".")
             guard let url = Bundle.main.url(forResource: String(parts[0]), withExtension: String(parts[1])),
                   let texture = try? loader.newTexture(URL: url, options: [
-                      .SRGB: false, .origin: MTKTextureLoader.Origin.topLeft,
+                      .SRGB: false, .origin: MTKTextureLoader.Origin.topLeft, .generateMipmaps: mips,
                       .textureUsage: MTLTextureUsage.shaderRead.rawValue,
                       .textureStorageMode: MTLStorageMode.private.rawValue,
                   ]) else {
                 NSLog("Encore: Night Drive texture \(name) missing")
                 return nil
             }
-            textures.append(texture)
+            textures.append((texture, slot))
         }
         return textures
     }()
@@ -232,7 +233,7 @@ struct MetalSceneView: NSViewRepresentable {
 /// Runs the multi-pass pipeline every frame.
 final class SceneRenderer: NSObject, MTKViewDelegate {
     private let visualizer: VisualizerEngine
-    private var scene: MetalScene = .flow
+    private var scene: MetalScene = .cosmos
     private var palette: ArtworkPalette = .brand
     private var colors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
     private var targetColors: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
@@ -434,7 +435,7 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             enc.setFragmentTexture(waveTexture, index: 6)
             enc.setFragmentTexture(peakTexture, index: 7)
             if let paintedDrive {
-                for (i, texture) in paintedDrive.enumerated() { enc.setFragmentTexture(texture, index: 3 + i) }
+                for (texture, slot) in paintedDrive { enc.setFragmentTexture(texture, index: slot) }
             }
             for name in [cfg.fragment, cfg.background].compactMap({ $0 }) {
                 if let pso = ctx.pipeline(vertex: "quadVertex", fragment: name, additive: false, format: MetalContext.hdrFormat) {
@@ -518,6 +519,7 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             cp.outSize = SIMD2(Float(width), Float(height))
             cp.bloomAmt = cfg.bloom
             cp.exposure = cfg.exposure
+            cp.rot = cfg.chroma
             enc.setRenderPipelineState(pso)
             enc.setFragmentBytes(&u, length: MemoryLayout<SceneUniforms>.stride, index: 0)
             enc.setFragmentBytes(&cp, length: MemoryLayout<PassParams>.stride, index: 1)

@@ -31,7 +31,7 @@ enum DebugSnapshots {
             log(model, "initial")
             await captureMain(dir, "1-audio-\(model.settings.visualizerStyle.rawValue)")
 
-            for style in [VisualizerStyle.cosmos, .aurora, .silk, .drive, .waves, .halo, .spectrum, .classic, .warp, .tide] {
+            for style in [VisualizerStyle.cosmos, .aurora, .silk, .drive, .waves, .halo, .classic, .warp] {
                 model.settings.visualizerStyle = style
                 try? await Task.sleep(for: .seconds(3.5))
                 await captureMain(dir, "2-audio-\(style.rawValue)")
@@ -69,7 +69,7 @@ enum DebugSnapshots {
                     await capture(panel, dir, "5-mini-player-lyrics")
                 }
                 MiniPlayerController.shared.close()
-                model.settings.visualizerStyle = .flow
+                model.settings.visualizerStyle = .drive
             }
 
             model.setMode(.video)

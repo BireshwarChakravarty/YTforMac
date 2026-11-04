@@ -23,7 +23,7 @@ private struct PaintedScreensOverlay: View {
             let s = max(w / 1920, h / 1080)
             let ox = (w - 1920 * s) / 2, oy = (h - 1080 * s) / 2
             let info = CGRect(x: ox + 700 * s, y: oy + 438 * s, width: 390 * s, height: 56 * s)
-            let speed = CGRect(x: ox + 1332 * s, y: oy + 454 * s, width: 92 * s, height: 72 * s)
+            let speed = CGRect(x: ox + 1359 * s, y: oy + 448 * s, width: 92 * s, height: 72 * s)
             ZStack {
                 InfotainmentText()
                     .frame(width: info.width, height: info.height)
