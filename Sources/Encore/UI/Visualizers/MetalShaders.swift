@@ -355,33 +355,60 @@ fragment float4 flowFragment(QuadOut in [[stage_in]],
 }
 
 // ================================================================ Halo
-// The artwork in a disc, ringed by a radial spectrum of light with soft trails.
+// The artwork as a slowly turning record with a glossy label, on a glow of its
+// own colours, ringed by a radial spectrum of rounded bars with peak dots that
+// fall back slowly, leaving soft trails.
 
 fragment float4 haloFragment(QuadOut in [[stage_in]],
                              constant Uniforms &u [[buffer(0)]],
                              texture2d<float> specTex [[texture(0)]],
-                             texture2d<float> artTex [[texture(2)]]) {
+                             texture2d<float> artTex [[texture(2)]],
+                             texture2d<float> peakTex [[texture(7)]]) {
     float2 uv = (fragCoord(in.position, u) - 0.5 * u.res) / u.res.y - float2(0.0, 0.06);
+    float px = 1.0 / u.res.y;
     float r = length(uv), a = atan2(uv.y, uv.x);
-    float R = 0.2 * (1.0 + 0.04 * u.beat);
-    float3 col = float3(0.0);
-    float n = 96.0;
+    float R = 0.19 * (1.0 + 0.035 * u.beat);
+    // a dim glow of the artwork's colours behind everything
+    float2 buv = rot(u.time * 0.02) * uv * 0.45 + 0.5;
+    float3 col = artTex.sample(artSampler, buv, level(7.0)).rgb * 0.16 * exp(-r * 1.6);
+    col += pal(u, 0.15) * exp(-pow(r - R * 1.1, 2.0) * 60.0) * 0.06 * (0.6 + u.bass);
+    // the spectrum: rounded bars with peak dots
+    float n = 80.0;
     float fa = fract(a / (2.0 * M_PI_F) + 0.25);
     float cell = floor(fa * n);
     float centerA = (cell + 0.5) / n;
     float seg = abs(centerA * 2.0 - 1.0);
-    float s = spec(specTex, seg * 0.85);
-    float len = 0.015 + s * 0.20;
+    float sv = spec(specTex, seg * 0.85);
+    float pk = max(peakAt(peakTex, seg * 0.85), sv);
+    float r0 = R * 1.14;
+    float len = 0.012 + sv * 0.2;
     float aDist = abs(fa - centerA) * 2.0 * M_PI_F * r;
-    float px = 1.0 / u.res.y;
-    float inBar = (1.0 - smoothstep(0.0015, 0.004 + px, aDist)) * smoothstep(R + 0.012, R + 0.02, r) * (1.0 - smoothstep(R + 0.02 + len, R + 0.024 + len, r));
-    col += pal(u, seg * 0.6 + u.phase * 0.03) * inBar * (0.8 + 2.0 * s);
-    col += pal(u, 0.1) * exp(-abs(r - R - 0.008) * 160.0) * (0.6 + 1.2 * u.level);
-    if (r < R) {
-        float2 auv = float2(uv.x, -uv.y) / (2.0 * R) + 0.5;
-        float3 art = artTex.sample(artSampler, auv, level(0)).rgb;
-        float edge = (1.0 - smoothstep(R - 0.004, R, r));
-        col = mix(col, art * (0.9 + 0.2 * u.beat), edge);
+    float w = 0.0034;
+    float dy = r - clamp(r, r0, r0 + len);
+    float bar = length(float2(aDist, dy)) - w;
+    float3 barCol = mix(mix(u.p0.rgb, u.p2.rgb, seg), u.p1.rgb, smoothstep(0.0, 0.2, r - r0)) * (0.55 + 1.2 * sv);
+    col = mix(col, barCol, 1.0 - smoothstep(-px, px, bar));
+    float pr = r0 + 0.012 + pk * 0.2 + 0.014;
+    float pdot = length(float2(aDist, r - pr)) - w * 0.85;
+    col = mix(col, mix(u.p1.rgb, float3(1.0), 0.6) * 1.4, (1.0 - smoothstep(-px, px, pdot)) * step(0.04, pk));
+    // the record
+    if (r < R * 1.1) {
+        float2 ruv = rot(-u.time * (0.08 + 0.25 * u.level)) * uv;
+        float3 disc = float3(0.018, 0.018, 0.022);
+        float grooves = 0.5 + 0.5 * sin(r * 900.0);
+        float sheen = pow(abs(sin(atan2(ruv.y, ruv.x) * 2.0 + 0.6)), 6.0);
+        disc += float3(0.05, 0.05, 0.06) * grooves * sheen * smoothstep(R * 0.98, R * 1.0, r);
+        if (r < R) {
+            float2 auv = float2(ruv.x, -ruv.y) / (2.0 * R) + 0.5;
+            disc = artTex.sample(artSampler, auv, level(0)).rgb * (0.92 + 0.18 * u.beat);
+            // gloss across the label and a fine rim
+            float gloss = pow(max(0.0, dot(normalize(uv + 1e-4), normalize(float2(-0.6, 0.8)))), 6.0) * smoothstep(0.0, R, r);
+            disc += float3(1.0) * gloss * 0.12;
+            disc *= 1.0 - 0.35 * smoothstep(R * 0.9, R, r);
+        }
+        float edge = 1.0 - smoothstep(R * 1.1 - px, R * 1.1, r);
+        col = mix(col, disc, edge);
+        col += pal(u, 0.1) * exp(-abs(r - R * 1.1) / (px * 2.0)) * (0.4 + 0.8 * u.level);
     }
     return float4(col, 1.0);
 }
@@ -673,8 +700,17 @@ static float4 silkScene(float2 fc, constant Uniforms &u, texture2d<float> specTe
     base = mix(base, u.p0.rgb, smoothstep(0.2, 1.0, h * 0.5 + 0.5) * 0.55);
     float shade = pow(0.5 + 0.5 * dot(n, L), 2.5);
     float3 col = base * (0.03 + 0.95 * shade);
-    col += mix(float3(1.0), u.p0.rgb, 0.35) * spc * (0.28 + 0.8 * u.level + 0.6 * u.beat);
-    col += u.p1.rgb * sheen * 0.30;
+    // satin: highlights stretched along the folds (Kajiya-Kay), a fine weave
+    float3 T = normalize(float3(-(hy - h), hx - h, 0.0) + float3(1e-5, 0.0, 0.0));
+    float th = dot(T, H);
+    float weave = 0.85 + 0.15 * sin(fc.x * 1.7 + fc.y * 0.4) * sin(fc.y * 1.9 - fc.x * 0.3);
+    float aniso = pow(sqrt(max(0.0, 1.0 - th * th)), 16.0) * weave * smoothstep(0.1, 0.6, diff);
+    col += mix(float3(1.0), u.p0.rgb, 0.35) * (spc * 0.6 + aniso * 0.32) * (0.28 + 0.8 * u.level + 0.6 * u.beat);
+    // a cool rim light from below and a faint iridescence at grazing angles
+    float3 L2 = normalize(float3(0.6, -0.5, 0.45));
+    col += mix(u.p2.rgb, float3(0.6, 0.75, 1.0), 0.5) * pow(max(dot(n, L2), 0.0), 3.0) * 0.12;
+    col += u.p1.rgb * sheen * 0.24;
+    col += (0.5 + 0.5 * cos(6.2831853 * (sheen * 1.6 + h * 0.2 + float3(0.0, 0.33, 0.67)))) * sheen * 0.08;
     col *= mix(0.22, 1.0, smoothstep(-1.1, 0.5, h));
     float s = spec(specTex, 0.1 + 0.6 * fract(p.x * 0.3 + 0.5));
     col += u.p0.rgb * exp(-abs(h - 0.55) * 18.0) * 0.08 * s;
