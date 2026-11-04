@@ -6,8 +6,6 @@ enum MetalScene: String {
     case flow, cosmos, aurora, silk, halo, waves, drive, tide
     /// The quiet dusk behind Lyric Pop.
     case calm
-    /// Night Drive's real driving footage (see FootagePlayer).
-    case footage
     /// A dimmer, slower Silk: the backdrop for lyrics.
     case stage
 
@@ -58,9 +56,7 @@ enum MetalScene: String {
         case .waves:
             return Config(fragment: "wavesFragment", threshold: 0.85, bloom: 0.6, exposure: 1.0)
         case .drive:
-            return Config(fragment: "driveFragment", threshold: 0.7, bloom: 0.9, exposure: 1.0)
-        case .footage:
-            return Config(fragment: "footageFragment", threshold: 2.2, bloom: 0.5, exposure: 1.0)
+            return Config(fragment: "driveFragment", threshold: 0.75, bloom: 0.9, exposure: 1.05)
         case .calm:
             return Config(fragment: "calmFragment", threshold: 0.9, bloom: 0.5, exposure: 1.0)
         case .tide:
@@ -87,14 +83,6 @@ struct SceneUniforms {
     var p1: SIMD4<Float> = .zero
     var p2: SIMD4<Float> = .zero
     var shadow: SIMD4<Float> = .zero
-}
-
-/// Mirrors `struct FootageParams` (16 bytes).
-struct FootageParams {
-    var mixAB: Float = 0
-    var rainA: Float = 0
-    var rainB: Float = 0
-    var aspect: Float = 16.0 / 9.0
 }
 
 /// Mirrors `struct PassParams` (48 bytes).
@@ -211,7 +199,6 @@ struct MetalSceneView: NSViewRepresentable {
     static func dismantleNSView(_ view: MTKView, coordinator: SceneRenderer) {
         view.isPaused = true
         view.delegate = nil
-        coordinator.stopFootage()
     }
 }
 
@@ -265,16 +252,8 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
         targetColors = colors
     }
 
-    private var usingFootage = false
-
     func configure(scene: MetalScene, palette: ArtworkPalette, artwork: NSImage?) {
         if scene != self.scene { self.scene = scene; needsClear = true }
-        if (scene == .footage) != usingFootage {
-            usingFootage = scene == .footage
-            MainActor.assumeIsolated {
-                if usingFootage { FootagePlayer.shared.retain() } else { FootagePlayer.shared.release() }
-            }
-        }
         if palette != self.palette {
             self.palette = palette
             targetColors = Self.vectors(palette)
@@ -291,12 +270,6 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
                 }
             }
         }
-    }
-
-    func stopFootage() {
-        guard usingFootage else { return }
-        usingFootage = false
-        MainActor.assumeIsolated { FootagePlayer.shared.release() }
     }
 
     private static func vectors(_ p: ArtworkPalette) -> (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) {
@@ -411,17 +384,6 @@ final class SceneRenderer: NSObject, MTKViewDelegate {
             enc.setFragmentTexture(specTexture, index: 0)
             enc.setFragmentTexture(histTexture, index: 1)
             enc.setFragmentTexture(art, index: 2)
-            if scene == .footage, let device = ctx.device {
-                var fp = FootageParams()
-                if let frame = FootagePlayer.shared.frame(device: device) {
-                    enc.setFragmentTexture(frame.a, index: 2)
-                    enc.setFragmentTexture(frame.b ?? frame.a, index: 3)
-                    fp = FootageParams(mixAB: frame.mix, rainA: frame.rainA, rainB: frame.rainB, aspect: frame.aspect)
-                } else {
-                    enc.setFragmentTexture(art, index: 3)
-                }
-                enc.setFragmentBytes(&fp, length: MemoryLayout<FootageParams>.stride, index: 2)
-            }
             for name in [cfg.fragment, cfg.background].compactMap({ $0 }) {
                 if let pso = ctx.pipeline(vertex: "quadVertex", fragment: name, additive: false, format: MetalContext.hdrFormat) {
                     enc.setRenderPipelineState(pso)

@@ -201,6 +201,8 @@ enum DebugSnapshots {
             let at = Int((line.start + 7.5) * rate)
             for (i, v) in samples.enumerated() where at + i < audio.count { audio[at + i] += v }
         }
+        let rms = sqrt(audio.reduce(0) { $0 + $1 * $1 } / Float(audio.count))
+        print("LISTENTEST synthesised \(audio.count) samples, rms \(String(format: "%.4f", rms)), on-device \(recognizer.supportsOnDeviceRecognition)")
         let listener = LyricsListener()
         var heard: [LyricsAligner.Word] = []
         listener.onWords = { heard += $0 }
@@ -215,7 +217,7 @@ enum DebugSnapshots {
             if i % (step * 40) == 0 { try? await Task.sleep(for: .milliseconds(20)) }
         }
         listener.flush()
-        try? await Task.sleep(for: .seconds(8))
+        try? await Task.sleep(for: .seconds(20))
         print("LISTENTEST locale=\(recognizer.locale.identifier) heard \(heard.count) words: \(heard.prefix(8).map { "\($0.text)@\(String(format: "%.1f", $0.time))" }.joined(separator: " "))")
         if let r = LyricsAligner.align(demo, to: heard, reestimate: false) {
             print("LISTENTEST aligned by ear: shift \(String(format: "%.2f", r.shiftAtStart)) s (expected 7.5), \(r.anchors) anchors")

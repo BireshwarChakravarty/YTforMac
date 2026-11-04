@@ -150,7 +150,10 @@ final class LyricsListener: @unchecked Sendable {
         self.request = request
         let base = chunkBase
         let gen = generation
-        let task = recognizer.recognitionTask(with: request) { [weak self] result, _ in
+        let task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            if let error = error as NSError?, error.code != 216, error.code != 301 {   // 216/301: cancelled
+                print("LISTENER recognition error \(error.domain) \(error.code): \(error.localizedDescription)")
+            }
             guard let self, let result, result.isFinal else { return }
             let words = result.bestTranscription.segments.compactMap { seg -> LyricsAligner.Word? in
                 let w = seg.substring.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -51,7 +51,7 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .cosmos: return "A spiral galaxy in deep space"
         case .aurora: return "Northern lights over a lake"
         case .silk: return "Flowing satin in your artwork's colours"
-        case .drive: return "A real drive through the rain at night"
+        case .drive: return "A rainy night drive in a Creta"
         case .waves: return "A soft glow that listens, waves at its heart"
         case .halo: return "Artwork ringed by the spectrum"
         case .spectrum: return "A smooth, mirrored waveform"
@@ -67,8 +67,7 @@ enum VisualizerStyle: String, CaseIterable, Identifiable, Codable {
         case .cosmos: return .cosmos
         case .aurora: return .aurora
         case .silk: return .silk
-        // Real footage when it's bundled; the drawn cabin otherwise.
-        case .drive: return Bundle.main.url(forResource: "drive-rain", withExtension: "mp4") != nil ? .footage : .drive
+        case .drive: return .drive
         case .waves: return .waves
         case .halo: return .halo
         case .tide: return .tide
