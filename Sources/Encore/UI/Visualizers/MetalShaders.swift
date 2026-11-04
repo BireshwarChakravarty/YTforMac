@@ -736,8 +736,8 @@ static float3 driveRain(float2 uv, float t, float since) {
         float2 f = fract(g) - 0.5;
         float h = hash2(id + fl * 11.0);
         if (h > 0.45 && fract(h * 31.0) < fill) {
-            float2 o = (float2(hash2(id + 1.7), hash2(id + 4.3)) - 0.5) * 0.6;
-            float r = 0.16 + 0.22 * fract(h * 17.0);
+            float2 o = (float2(hash2(id + 1.7), hash2(id + 4.3)) - 0.5) * 0.36;   // drops stay inside their cell
+            float r = 0.13 + 0.16 * fract(h * 17.0);
             float2 dp = (f - o) * float2(1.0, 1.15);
             float m = 1.0 - smoothstep(r * 0.8, r, length(dp));
             off += dp / r * 0.012 * m;
@@ -754,7 +754,7 @@ static float3 driveRain(float2 uv, float t, float since) {
     off += dp / 0.009 * 0.012 * m;
     mask = max(mask, m);
     float trail = (1.0 - smoothstep(0.0015, 0.003, abs(x))) * smoothstep(y, y + 0.25, uv.y) * step(uv.y, y + 0.25) * on;
-    return float3(off, max(mask, trail * 0.5));
+    return float3(off, max(mask, trail * 0.25));
 }
 
 // ================================================================ Night Drive (lofi)
@@ -1357,8 +1357,8 @@ static float3 pdUntonemap(float3 v) {
 // lights add HDR on top so they bloom. Coordinates: painting pixels (1920x1080,
 // y down), the painted cabin's space.
 
-#define NW_HZ 345.0
-#define NW_VX 905.0
+#define NW_HZ 468.0
+#define NW_VX 1180.0
 #define NW_F 1150.0
 #define NW_CAMH 1.3
 #define NW_SPEED 12.5
@@ -1467,7 +1467,7 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs,
             float dash = smoothstep(0.0, aw, ph) * (1.0 - smoothstep(0.32, 0.32 + aw, ph));
             float edge = clamp((0.075 - abs(au - 3.4)) / mpp + 0.5, 0.0, 1.0) * min(1.0, 0.15 / mpp);
             float mark = max(cl * dash, edge) * (1.0 - 0.5 * far);
-            col = mix(asphalt, float3(0.82, 0.82, 0.78), mark);
+            col = mix(asphalt, float3(0.62, 0.62, 0.6), mark);
             if (au > 3.55) {
                 float3 verge = mix(float3(0.10, 0.10, 0.11), float3(0.05, 0.10, 0.07), smoothstep(4.0, 4.8, au));
                 col = verge * (0.85 + 0.3 * grain);
@@ -1652,28 +1652,41 @@ static float3 pdDial(float2 ip, float2 c, float R, float v, float majors, float 
     return col;
 }
 
-static float3 pdCluster(float2 ip, float3 col, float t, float bass) {
-    float panel = sdBox(ip - float2(1405.0, 486.0), float2(208.0, 78.0), 16.0);
-    if (panel > 3.0) return col;
-    float m = 1.0 - smoothstep(-1.0, 1.0, panel);
-    float3 bg = mix(float3(0.006, 0.01, 0.022), float3(0.015, 0.025, 0.05), smoothstep(564.0, 408.0, ip.y));
-    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - float2(1276.0, 480.0)) / 60.0);
-    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - float2(1534.0, 480.0)) / 60.0);
-    // a thin line under the top edge, and the road graphic in the middle
-    bg += float3(0.1, 0.35, 0.5) * exp(-abs(ip.y - 414.0) / 0.8) * step(abs(ip.x - 1405.0), 120.0) * 0.4;
+// The cluster's picture, centred between two dials (the screen mask shapes it).
+static float3 pdCluster(float2 ip, float t, float bass) {
+    float2 c = float2(1475.0, 814.0);
+    float3 bg = mix(float3(0.006, 0.01, 0.022), float3(0.014, 0.024, 0.048), smoothstep(905.0, 727.0, ip.y));
+    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - (c - float2(130.0, 0.0))) / 62.0);
+    bg += float3(0.0, 0.04, 0.07) * exp(-length(ip - (c + float2(130.0, 0.0))) / 62.0);
+    bg += float3(0.1, 0.35, 0.5) * exp(-abs(ip.y - 738.0) / 0.8) * step(abs(ip.x - c.x), 110.0) * 0.4;
     float speed = pdNwSpeed(t);
     float rpm = 1450.0 + speed * 9.0 + 220.0 * bass + 60.0 * sin(t * 1.7);
-    bg = pdDial(ip, float2(1276.0, 482.0), 60.0, rpm / 8000.0, 8.0, 0.75, bg);
-    bg = pdDial(ip, float2(1534.0, 482.0), 60.0, speed / 220.0, 11.0, 2.0, bg);
-    // bezel
-    bg += float3(0.25, 0.3, 0.38) * exp(-abs(panel + 1.0) / 0.9) * 0.35;
-    return mix(col, bg, m);
+    bg = pdDial(ip, c - float2(130.0, 0.0), 64.0, rpm / 8000.0, 8.0, 0.75, bg);
+    bg = pdDial(ip, c + float2(130.0, 0.0), 64.0, speed / 220.0, 11.0, 2.0, bg);
+    return bg;
+}
+
+// The infotainment: a soft backdrop in the artwork's colours and the song's
+// spectrum as LED bars (the title is drawn natively above them).
+static float3 pdInfotainment(float2 ip, constant Uniforms &u, texture2d<float> specTex) {
+    float2 sMin = float2(626.0, 735.0), sMax = float2(1140.0, 896.0);
+    float2 q = (ip - (sMin + sMax) * 0.5) / ((sMax - sMin) * 0.5);
+    q.y = -q.y;
+    float3 bg = mix(float3(0.02, 0.03, 0.08), float3(0.06, 0.05, 0.12), q.y * 0.5 + 0.5);
+    bg += u.p1.rgb * 0.06 * (1.0 - length(q * float2(0.6, 1.0)));
+    float bars = 32.0;
+    float bx = (q.x * 0.5 + 0.5) * bars;
+    float v = spec(specTex, floor(bx) / bars * 0.9);
+    float barTop = -0.9 + v * 0.75;
+    float colBar = step(0.2, fract(bx)) * step(fract(bx), 0.8) * step(-0.9, q.y) * step(abs(q.x), 1.0);
+    float3 barCol = mix(float3(0.3, 0.9, 1.0), u.p0.rgb, smoothstep(-0.9, -0.2, q.y));
+    bg += barCol * colBar * step(q.y, barTop) * 0.9 + barCol * colBar * exp(-max(q.y - barTop, 0.0) * 25.0) * 0.1;
+    return bg;
 }
 
 static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
                       texture2d<float> cabin, texture2d<float> masks2,
-                      texture2d<float> sky, texture2d<float> trees, texture2d<float> treesA,
-                      texture2d<float> wheel, texture2d<float> wheelA) {
+                      texture2d<float> sky, texture2d<float> trees, texture2d<float> treesA) {
     float2 sz = float2(PD_W, PD_H);
     float s = max(u.res.x / PD_W, u.res.y / PD_H);
     float2 o = (u.res - sz * s) * 0.5;
@@ -1682,12 +1695,13 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
     float t = u.time;
     float px = 1.0 / (PD_H * s);
     float pxs = 1.0 / (NW_F * s);
-    float glass = 1.0 - masks2.sample(linearSampler, ip / sz).r;
+    float4 mk = masks2.sample(linearSampler, ip / sz);
+    float glass = 1.0 - mk.r, mirror = mk.g, screen = mk.b;
     float3 view = float3(0.0);
     if (glass > 0.002) {
         // rain on the glass and the wipers (pivots at the foot of the windshield)
         float blade;
-        float2 wp = p - float2(0.06, 0.215);
+        float2 wp = (p - float2(0.06, -0.12)) * 0.62;
         float since = drvWipe(wp, t, blade);
         float3 r = driveRain(wp, t, since);
         float2 refr = float2(r.x, -r.y) * PD_H;
@@ -1697,53 +1711,32 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
             view = mix(view, sharp * 1.1 + 0.015, r.z * 0.7);
         }
         view *= 0.94 + 0.06 * (1.0 - r.z);
-        // the blades only while they sweep (parked, they sit below the bonnet line)
         float sweeping = step(t - 7.0 * floor(t / 7.0), 1.32);
-        view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95 * sweeping);
+        view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / (px * 0.62), 0.0, 1.0) * 0.95 * sweeping);
     }
-
     // the painted cabin, lit by the lamps going by
     float3 cab = pdUntonemap(cabin.sample(linearSampler, ip / sz).rgb);
     float pass = nwLampPass(t) * (1.0 + 0.3 * u.bass);
-    float fromLeft = smoothstep(0.8, -0.7, p.x) * smoothstep(-0.45, 0.2, p.y);
-    float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.45 * fromLeft);
-    // infotainment: the song's LED bars (title drawn natively above them)
-    float2 sMin = float2(682.0, 428.0);
-    float2 sMax = float2(1106.0, 556.0);
-    float2 sc = (sMin + sMax) * 0.5;
-    float2 sh = (sMax - sMin) * 0.5;
-    float scr = sdBox(ip - sc, sh, 10.0);
-    if (scr < 1.0) {
-        float2 q = (ip - sc) / sh;
-        q.y = -q.y;
-        float3 sbg = mix(float3(0.02, 0.035, 0.09), float3(0.06, 0.05, 0.12), q.y * 0.5 + 0.5);
-        sbg += u.p1.rgb * 0.05 * (1.0 - length(q * float2(0.6, 1.0)));
-        float bars = 26.0;
-        float bx = (q.x * 0.5 + 0.5) * bars;
-        float v = spec(specTex, floor(bx) / bars * 0.9);
-        float barTop = -0.92 + v * 0.85;
-        float colBar = step(0.2, fract(bx)) * step(fract(bx), 0.8) * step(-0.92, q.y);
-        float3 barCol = mix(float3(0.3, 0.9, 1.0), u.p0.rgb, smoothstep(-0.9, -0.1, q.y));
-        sbg += barCol * colBar * step(q.y, barTop) * 0.9 + barCol * colBar * exp(-max(q.y - barTop, 0.0) * 25.0) * 0.1;
-        lit = mix(lit, sbg * 1.25, 1.0 - smoothstep(-1.0, 1.0, scr));
+    float fromLeft = smoothstep(0.8, -0.7, p.x) * smoothstep(-0.5, 0.0, p.y);
+    float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.4 * fromLeft);
+    // the rear-view mirror: the road behind, receding (a mirror keeps the hillside on the left)
+    if (mirror > 0.01) {
+        float2 mc = float2(947.0, 96.0), mh = float2(220.0, 54.0);
+        float2 mq = (ip - mc) / mh;                                   // -1...1 across the glass
+        float2 rip = float2(NW_VX + mq.x * 520.0, NW_HZ - 40.0 + mq.y * 150.0);
+        float3 rear = nwWorld(rip, -t - 30.0, u.bass * 0.5, pxs * 2.4, sky, trees, treesA);
+        rear = rear * float3(0.62, 0.66, 0.74) + 0.006;
+        rear *= 1.0 - 0.35 * pow(length(mq * float2(0.9, 1.0)), 3.0);
+        rear += float3(0.04, 0.05, 0.07) * smoothstep(0.2, -0.9, mq.y + mq.x * 0.3) * 0.5;   // a sheen across the glass
+        lit = mix(lit, rear, mirror);
     }
-    // the digital instrument cluster, live (the digits in the middle are drawn natively)
-    lit = pdCluster(ip, lit, t, u.bass);
-    lit *= 1.0 + 0.06 * u.beat * smoothstep(80.0, 0.0, abs(ip.y - 490.0));       // screens breathe on the beat
+    // the dual display: infotainment on the left, the cluster behind the wheel
+    if (screen > 0.01) {
+        float3 disp = ip.x < 1150.0 ? pdInfotainment(ip, u, specTex) : (ip.x < 1236.0 ? float3(0.008, 0.012, 0.026) : pdCluster(ip, t, u.bass));
+        disp *= 1.0 + 0.06 * u.beat;
+        lit = mix(lit, disp, screen);
+    }
     float3 col = mix(lit, view, glass);
-    // the steering wheel, turning with the road
-    float steer = clamp(nwCurve(t) * 310.0, -0.26, 0.26) + 0.008 * sin(t * 0.6);
-    float2 wc = float2(1426.5, 583.0);
-    float2 rel = ip - wc;
-    float cs = cos(steer), sn = sin(steer);
-    float2 wp2 = float2(cs * rel.x + sn * rel.y, -sn * rel.x + cs * rel.y) + wc - float2(1140.0, 326.0);
-    float2 wuv = wp2 / float2(574.0, 516.0);
-    if (wuv.x > 0.0 && wuv.y > 0.0 && wuv.x < 1.0 && wuv.y < 1.0) {
-        float wa = wheelA.sample(linearSampler, wuv).r;
-        float3 wcol = pdUntonemap(wheel.sample(linearSampler, wuv).rgb);
-        wcol *= 1.0 + float3(1.0, 0.66, 0.36) * pass * 0.35 * fromLeft;
-        col = mix(col, wcol, wa);
-    }
     float outside = min(step(ip.x, 0.0) + step(PD_W, ip.x) + step(ip.y, 0.0) + step(PD_H, ip.y), 1.0);
     col = mix(col, float3(0.012, 0.013, 0.02), outside);
     return float4(col, 1.0);
@@ -1756,11 +1749,9 @@ fragment float4 driveFragment(QuadOut in [[stage_in]],
                               texture2d<float> masks2 [[texture(4)]],
                               texture2d<float> sky [[texture(5)]],
                               texture2d<float> trees [[texture(8)]],
-                              texture2d<float> treesA [[texture(9)]],
-                              texture2d<float> wheel [[texture(10)]],
-                              texture2d<float> wheelA [[texture(11)]]) {
+                              texture2d<float> treesA [[texture(9)]]) {
     float2 fc = fragCoord(in.position, u);
-    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, cabin, masks2, sky, trees, treesA, wheel, wheelA);
+    if (u.pad1 > 0.5) return pdScene(fc, u, specTex, cabin, masks2, sky, trees, treesA);
     return lofiScene(fc, u, specTex);
 }
 

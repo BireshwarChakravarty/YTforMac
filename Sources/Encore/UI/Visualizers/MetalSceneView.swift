@@ -156,7 +156,7 @@ final class MetalContext {
     }
 
     /// Night Drive's art, as (texture, fragment slot): the painted Creta cabin
-    /// and its glass mask, the painted panorama outside, and the painted trees
+    /// and its masks (red: cabin, green: rear-view mirror glass, blue: the screens), the painted panorama outside, and the painted trees
     /// (colour and alpha kept apart so nothing is premultiplied). Nil if any is
     /// missing from the bundle.
     private(set) lazy var nightDrive: [(MTLTexture, Int)]? = {
@@ -164,7 +164,6 @@ final class MetalContext {
         let files: [(String, Int, Bool)] = [
             ("drive-cabin.jpg", 3, false), ("drive-masks2.png", 4, false), ("drive-sky.jpg", 5, true),
             ("drive-trees.jpg", 8, true), ("drive-trees-alpha.png", 9, true),
-            ("drive-wheel.jpg", 10, false), ("drive-wheel-alpha.png", 11, false),
         ]
         var textures: [(MTLTexture, Int)] = []
         for (name, slot, mips) in files {
