@@ -76,6 +76,7 @@ struct NowPlayingView: View {
                 .layoutPriority(1)
 
                 HStack(spacing: 4) {
+                    IconButton(symbol: "arrow.up.left.and.arrow.down.right", size: 14, help: "Full-screen visualiser (\u{21E7}\u{2318}F)") { model.toggleImmersive() }
                     IconButton(symbol: "pip.enter", size: 14, help: "Mini player") { MiniPlayerController.shared.toggle() }
                     IconButton(symbol: "link", size: 14, help: "Copy link") { model.copyCurrentLink() }
                     VolumeControl(width: 100).padding(.leading, 6)

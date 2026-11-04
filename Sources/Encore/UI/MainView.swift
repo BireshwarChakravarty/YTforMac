@@ -7,8 +7,24 @@ struct MainView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
+        Group {
+            if model.immersive {
+                ImmersiveView()
+                    .ignoresSafeArea()
+                    .toolbar(.hidden, for: .windowToolbar)
+            } else {
+                splitView
+            }
+        }
+        .frame(minWidth: 940, minHeight: 600)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            if model.immersive { withAnimation { model.immersive = false } }
+        }
+    }
+
+    private var splitView: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 228, max: 280)
         } detail: {
@@ -28,7 +44,6 @@ struct MainView: View {
         }
         .onChange(of: model.searchText) { _, text in suggester.update(text) }
         .background(Theme.Palette.background)
-        .frame(minWidth: 940, minHeight: 600)
         .overlay(alignment: .top) { ToastView() }
     }
 
@@ -239,5 +254,91 @@ struct QualityMenu: View {
         }
         .fixedSize()
         .help("Streaming quality. \u{201C}Highest available\u{201D} is the default.")
+    }
+}
+
+
+/// The full-screen visualiser: only the visuals. Moving the mouse brings up the
+/// controls for a few seconds; Esc or ⇧⌘F leaves.
+struct ImmersiveView: View {
+    @Environment(AppModel.self) private var model
+    @State private var controlsVisible = true
+    @State private var hideTask: Task<Void, Never>?
+
+    var body: some View {
+        let style = model.settings.visualizerStyle
+        let player = model.player
+        ZStack {
+            AmbientBackground()
+            if player.hasMedia {
+                VisualizerView(style: style)
+                    .id(style)
+                    .transition(.opacity)
+                if style.isLyrics {
+                    LyricsStage(style: style)
+                        .padding(.vertical, 70)
+                        .id(style)
+                }
+            } else {
+                EmptyNowPlaying()
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    VisualizerPicker()
+                    if style.isLyrics { LyricsInfoChip() }
+                    Spacer()
+                    IconButton(symbol: "arrow.down.right.and.arrow.up.left", size: 15, help: "Exit full screen (Esc)") {
+                        model.toggleImmersive()
+                    }
+                }
+                .padding(24)
+                Spacer()
+                if player.hasMedia {
+                    VStack(spacing: 12) {
+                        if style != .drive {
+                            Text(player.title)
+                                .font(Theme.Fonts.display(22))
+                                .lineLimit(1)
+                                .shadow(color: .black.opacity(0.5), radius: 10)
+                        }
+                        ScrubberView()
+                        TransportControls(size: .large, showSkips: true)
+                    }
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.black.opacity(0.35))
+                            .blur(radius: 0.5)
+                    )
+                    .padding(.bottom, 34)
+                }
+            }
+            .opacity(controlsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.4), value: controlsVisible)
+        }
+        .background(Color.black)
+        .onContinuousHover { phase in
+            if case .active = phase { showControls() }
+        }
+        .onTapGesture { controlsVisible ? hideNow() : showControls() }
+        .onExitCommand { model.toggleImmersive() }
+        .onAppear { showControls() }
+        .onDisappear { hideTask?.cancel(); NSCursor.setHiddenUntilMouseMoves(false) }
+    }
+
+    private func showControls() {
+        controlsVisible = true
+        hideTask?.cancel()
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.8))
+            guard !Task.isCancelled else { return }
+            hideNow()
+        }
+    }
+
+    private func hideNow() {
+        controlsVisible = false
+        NSCursor.setHiddenUntilMouseMoves(true)
     }
 }

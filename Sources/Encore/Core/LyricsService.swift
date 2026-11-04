@@ -291,8 +291,8 @@ final class LyricsService {
             guard let self, self.trackKey == videoId else { return }
             self.earHeard += words
             if self.details.last?.hasPrefix("Heard") == true { self.details.removeLast() }
-            self.details.append("Heard \(self.earHeard.count) words by ear so far")
-            self.realign(reason: "by ear")
+            self.details.append("Heard \(self.earHeard.count) words by ear so far: \(self.earHeard.suffix(6).map(\.text).joined(separator: " "))")
+            if !self.realign(reason: "by ear"), !self.aligned { self.syncLabel = "listening (\(self.earHeard.count) words)" }
         }
         listener.onProblem = { [weak self] message in
             guard let self, self.trackKey == videoId else { return }
@@ -305,6 +305,9 @@ final class LyricsService {
             switch result {
             case .listening(let engine):
                 self.listening = .listening(engine)
+                if !self.aligned { self.syncLabel = "listening\u{2026}" }
+                let audio = self.audioTap.map { "\($0.status)" } ?? "none"
+                self.details.append("Audio capture: \(audio)")
                 self.details.append("Listening: on-device speech recognition (\(engine))")
                 // Seeks and pauses break the timeline; start over when they happen.
                 self.watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in

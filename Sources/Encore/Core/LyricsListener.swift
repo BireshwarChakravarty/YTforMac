@@ -88,6 +88,18 @@ final class LyricsListener: @unchecked Sendable {
     func start(lines: [LyricLine], videoTime: Double, completion: @escaping (StartResult) -> Void) {
         let candidates = Self.localeCandidates(for: lines)
         stop()
+        // Ask for Speech Recognition permission up front (macOS shows its prompt once).
+        Self.requestAuthorization { [weak self] ok in
+            guard let self else { return }
+            if !ok && Self.authorization != .notDetermined {
+                completion(.failed("Speech Recognition is turned off for Encore in System Settings", needsPermission: true))
+                return
+            }
+            self.startEngines(candidates, videoTime: videoTime, completion: completion)
+        }
+    }
+
+    private func startEngines(_ candidates: [String], videoTime: Double, completion: @escaping (StartResult) -> Void) {
         if #available(macOS 26.0, *) {
             Task {
                 if let (locale, dictation) = await AnalyzerSession.bestLocale(candidates) {

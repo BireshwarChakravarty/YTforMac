@@ -22,6 +22,8 @@ final class AppModel {
     /// Set to focus the toolbar search field.
     var searchText = ""
     var toast: Toast?
+    /// Full-screen visualiser: just the visuals, controls appear on mouse move.
+    var immersive = false
 
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     /// Captured from SwiftUI so AppKit code (Dock, launch) can open the main window.
@@ -173,6 +175,20 @@ final class AppModel {
     }
 
     func toggleMode() { setMode(settings.mode.toggled) }
+
+    /// Enters or leaves the full-screen visualiser (and macOS full screen with it).
+    func toggleImmersive() {
+        let entering = !immersive
+        if entering {
+            destination = .nowPlaying
+            if settings.mode == .video { setMode(.audio) }
+        }
+        withAnimation(.easeInOut(duration: 0.35)) { immersive = entering }
+        let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("main") == true }) ?? NSApp.keyWindow
+        if let window, window.styleMask.contains(.fullScreen) != entering {
+            window.toggleFullScreen(nil)
+        }
+    }
 
     /// Runs the system-audio tap only while a visualiser is on screen.
     func refreshAudioCapture() {

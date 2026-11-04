@@ -43,6 +43,14 @@ enum DebugSnapshots {
             }
             log(model, "after visualisers")
 
+            // Full-screen visualiser (layout only; no macOS full-screen space on CI).
+            model.settings.visualizerStyle = .drive
+            model.immersive = true
+            try? await Task.sleep(for: .seconds(4))
+            await captureMain(dir, "2-audio-drive-fullscreen")
+            model.immersive = false
+            try? await Task.sleep(for: .seconds(1))
+
             // Lyrics: YouTube can't play on CI, so run the sample lyrics on their own clock.
             if args.contains("--demo-lyrics") {
                 await lyricsSelfTest()

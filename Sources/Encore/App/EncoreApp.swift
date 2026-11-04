@@ -83,6 +83,8 @@ struct EncoreCommands: Commands {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
             Button("Next Visualiser") { model.cycleVisualizer() }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
+            Button(model.immersive ? "Exit Full-Screen Visualiser" : "Full-Screen Visualiser") { model.toggleImmersive() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             Button(MiniPlayerController.shared.isVisible ? "Close Mini Player" : "Open Mini Player") { MiniPlayerController.shared.toggle() }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Divider()

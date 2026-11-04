@@ -54,12 +54,13 @@ enum LyricsAligner {
             guard let times = index[t.text], times.count <= 12 else { continue }
             for v in times where abs(v - t.time) < 150 { pairs.append((t.time, v)) }
         }
-        guard pairs.count >= 6 else { return nil }
+        guard pairs.count >= 5 else { return nil }
+        let fallback = globalShift(pairs, lines: lines, sung: sung, reestimate: reestimate)
 
         // Longest chain increasing in both lyric and video time.
         pairs.sort { $0.0 != $1.0 ? $0.0 < $1.0 : $0.1 > $1.1 }
         let chain = longestIncreasing(pairs)
-        guard chain.count >= 6 else { return nil }
+        guard chain.count >= 6 else { return fallback }
 
         // Drop anchors that disagree with their neighbours, then smooth.
         let deltas = chain.map { $0.1 - $0.0 }
@@ -69,10 +70,10 @@ enum LyricsAligner {
             anchors.append((p.0, deltas[i]))
         }
         // Speech recognition on music is noisy: insist the chain mostly agrees.
-        guard anchors.count >= 6, Double(anchors.count) >= Double(chain.count) * 0.55 else { return nil }
+        guard anchors.count >= 6, Double(anchors.count) >= Double(chain.count) * 0.55 else { return fallback }
         let lyricSpan = (sung.last?.start ?? 0) - (sung.first?.start ?? 0)
         let covered = (anchors.last?.0 ?? 0) - (anchors.first?.0 ?? 0)
-        guard covered >= min(30, lyricSpan * 0.3) else { return nil }
+        guard covered >= min(30, lyricSpan * 0.3) else { return fallback }
         let smooth = medianFilter(anchors.map(\.1), radius: 2)
         let map = zip(anchors.map(\.0), smooth).map { ($0, $1) }
 
@@ -114,6 +115,32 @@ enum LyricsAligner {
         let shiftAtStart = (out.first(where: { !$0.text.isEmpty })?.start ?? 0) - (sung.first?.start ?? 0)
         return Alignment(lines: out, anchors: anchors.count, coverage: lyricSpan > 0 ? min(1, covered / lyricSpan) : 1,
                          shiftAtStart: shiftAtStart)
+    }
+
+    /// When the matches don't form a long enough chain, a single clear offset
+    /// still fixes the common case (an intro or outro): the time difference most
+    /// matches agree on, if it clearly beats every other.
+    static func globalShift(_ pairs: [(Double, Double)], lines: [LyricLine], sung: [LyricLine], reestimate: Bool) -> Alignment? {
+        let deltas = pairs.map { $0.1 - $0.0 }.sorted()
+        guard deltas.count >= 5 else { return nil }
+        var best = (count: 0, center: 0.0)
+        for d in deltas {
+            let n = deltas.filter { abs($0 - d) <= 0.75 }.count
+            if n > best.count { best = (n, d) }
+        }
+        let others = deltas.filter { abs($0 - best.center) > 3.0 }
+        var second = 0
+        for d in others { second = max(second, others.filter { abs($0 - d) <= 0.75 }.count) }
+        guard best.count >= 5, best.count >= second * 2 else { return nil }
+        let window = deltas.filter { abs($0 - best.center) <= 0.75 }
+        let shift = window[window.count / 2]
+        let out = lines.map { l in
+            LyricLine(id: l.id, start: l.start + shift, end: l.end + shift, text: l.text,
+                      words: reestimate ? LRC.estimate(l.text, start: l.start + shift, end: l.end + shift)
+                                        : l.words.map { .init(text: $0.text, start: $0.start + shift, end: $0.end + shift) })
+        }
+        let span = max((sung.last?.start ?? 0) - (sung.first?.start ?? 0), 1)
+        return Alignment(lines: out, anchors: best.count, coverage: min(1, Double(best.count) * 4 / span), shiftAtStart: shift)
     }
 
     // MARK: Tokens

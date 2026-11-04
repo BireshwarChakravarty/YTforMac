@@ -112,7 +112,7 @@ private struct ClusterSpeed: View {
             GeometryReader { g in
                 let size = g.size.height
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let speed = Int((54 + 2 * sin(t * 0.05) + 1 * sin(t * 0.23)).rounded())
+                let speed = Int((50 + 1.5 * sin(t * 0.05) + 0.8 * sin(t * 0.23)).rounded())
                 VStack(spacing: 0) {
                     Text("\(speed)")
                         .font(.system(size: size * 0.42, weight: .semibold, design: .rounded).monospacedDigit())

@@ -1278,25 +1278,71 @@ static float3 pdExterior(float2 ip, float t, constant Uniforms &u,
     float depth = clamp((ip.y - 330.0) / 80.0, 0.0, 1.0);
     q += m.r * float2(1.6 * sin(ip.y * 0.75 + t * 2.2) * (0.4 + depth), 0.6 * sin(ip.x * 0.04 - t * 1.4));
     float3 col = base.sample(linearSampler, q / sz).rgb;
-    // the road streaming towards the vanishing point (two crossfaded copies)
-    float2 vp = float2(643.0, 351.0);
-    float3 rr = float3(0.0);
-    float ra = 0.0;
-    for (int k = 0; k < 2; k++) {
-        float ph = fract(t / 2.4 + float(k) * 0.5);
-        float sc = exp(0.07 * ph);
-        float w = 0.5 - 0.5 * cos(6.2831853 * ph);
-        float2 rq = vp + (q - vp) / sc;
-        float a = masks2.sample(linearSampler, rq / sz).g;
-        rr += road.sample(linearSampler, rq / sz).rgb * a * w;
-        ra += a * w;
+    // ---- the drive: everything near the car moves; the distance stays put ----
+    // The painted road converges on (600, 350); its width is 10.5 px per pixel
+    // below the horizon and its centre line runs along x = 600 + 3.73 * d.
+    float dist = t * 14.0;                                       // metres travelled (~50 km/h)
+    float3 warmLight = float3(1.0, 0.68, 0.36);
+    float dd = q.y - 350.0;
+    if (dd > 1.2 && q.y < 416.0) {
+        float width = 10.5 * dd;
+        float uq = (q.x - (600.0 + 3.73 * dd)) / width;
+        if (abs(uq) < 0.47) {
+            float z = 330.0 / dd;
+            float zr = z + dist;
+            // the painted centre dashes give way to flowing ones
+            float nearC = 1.0 - smoothstep(0.018, 0.034, abs(uq));
+            float3 beside = base.sample(linearSampler, float2(q.x + 0.075 * width, q.y) / sz).rgb;
+            col = mix(col, beside, nearC);
+            // asphalt grain and wet sheen sliding under the car
+            col *= 0.9 + 0.2 * fbm3(float2(uq * 9.0, zr * 0.55));
+            col += warmLight * pow(0.5 + 0.5 * sin(zr * 0.9 + uq * 3.0), 10.0) * 0.035 * smoothstep(2.0, 20.0, dd);
+            float pools = 0.0;
+            for (int k = 0; k < 5; k++) {
+                float lz = (float(k) + 1.0) * 30.0 - fmod(dist, 30.0);
+                pools += exp(-pow(z - lz, 2.0) * 0.012) * exp(-pow(uq + 0.28, 2.0) * 5.0);
+            }
+            col += warmLight * pools * 0.10;
+            float ph = fract(zr / 9.0);
+            float dashW = 0.0125;
+            float dash = (1.0 - smoothstep(dashW * 0.55, dashW, abs(uq))) * smoothstep(0.0, 0.03, ph) * (1.0 - smoothstep(0.36, 0.40, ph));
+            col = mix(col, float3(0.86, 0.82, 0.72) * (0.6 + 0.6 * pools), dash * smoothstep(1.5, 6.0, dd) * 0.9);
+        }
     }
-    col = col * (1.0 - ra) + rr;
-    // wet sheen sliding along the road
-    float roadHere = masks2.sample(linearSampler, ip / sz).g;
-    float v = clamp((412.0 - ip.y) / 60.0, 0.0, 1.0);
-    float z = 1.0 / (v * 0.95 + 0.05);
-    col += float3(1.0, 0.75, 0.45) * pow(0.5 + 0.5 * sin(z * 2.0 + t * 6.0), 8.0) * (1.0 - v) * roadHere * 0.07;
+    // white bollards streaming past along the lake edge (nearest drawn last)
+    for (int i = 11; i >= 0; i--) {
+        float zb = 7.0 * (float(i) + 1.0) - fmod(dist, 7.0);
+        float d = 330.0 / zb;
+        if (d < 3.5 || d > 70.0) continue;
+        float2 bc = float2(715.0 + 7.5 * d + 0.054 * d * d, 350.0 + d);
+        float h = 0.5 * d;
+        float w = 0.46 * d;
+        float2 rel = q - (bc - float2(0.0, h * 0.5));
+        float post = sdBox(rel, float2(w * 0.5, h * 0.5), w * 0.18);
+        if (post < 2.0) {
+            float lit = 0.55 + 0.45 * smoothstep(w * 0.5, -w * 0.5, rel.x);        // warm light from the road side
+            float3 white = float3(0.86, 0.82, 0.72) * (0.38 + 0.4 * lit);
+            white = mix(white, white * 0.45, smoothstep(-h * 0.22, -h * 0.12, -rel.y) * (1.0 - smoothstep(-h * 0.08, 0.0, -rel.y)));   // the dark band
+            white += float3(1.0, 0.9, 0.75) * smoothstep(-h * 0.5, -h * 0.38, rel.y) * 0.12;                                          // cap catching light
+            col = mix(col, white, (1.0 - smoothstep(-0.8, 0.8, post)) * smoothstep(3.5, 7.0, d));
+        }
+    }
+    // rain rushing towards the glass out of the dark (lit by the lamps)
+    float2 rv = q - float2(600.0, 340.0);
+    float rr = length(rv);
+    float ang = atan2(rv.y, rv.x);
+    for (int layer = 0; layer < 2; layer++) {
+        float bins = layer == 0 ? 140.0 : 220.0;
+        float bin = floor((ang / 6.2831853 + 0.5) * bins);
+        float hb = hash1(bin * 3.7 + float(layer) * 17.0);
+        if (hb < 0.55) continue;
+        float phase = fract(t * (0.45 + 0.25 * hb) + hb * 9.0);
+        float r0 = 25.0 * exp(3.6 * phase);
+        float len = 0.06 * r0;
+        float across = abs(fract((ang / 6.2831853 + 0.5) * bins) - 0.5);
+        float streak = (1.0 - smoothstep(0.0, len, abs(rr - r0))) * (1.0 - smoothstep(0.08, 0.22, across));
+        col += mix(float3(0.75, 0.8, 1.0), warmLight, 0.4) * streak * smoothstep(0.0, 0.3, phase) * (1.0 - smoothstep(0.85, 1.0, phase)) * 0.16;
+    }
     // stars twinkling
     float lum = dot(col, float3(0.2126, 0.7152, 0.0722));
     col *= 1.0 + m.b * smoothstep(0.45, 0.8, lum) * 0.5 * sin(t * 3.0 + hash2(floor(ip / 4.0)) * 30.0);
@@ -1336,19 +1382,18 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
         view = mix(view, sharp * 1.12 + 0.02, r.z * 0.75);
     }
     view *= 0.93 + 0.07 * (1.0 - r.z);
-    // rain falling through the night
-    float2 rg = float2(p.x * 95.0 + p.y * 16.0, p.y * 6.0 + t * 7.5);
-    float rh = hash1(floor(rg.x) * 1.31);
-    float ry = fract(rg.y + rh * 13.0);
-    float streak = (1.0 - smoothstep(0.0, 0.12, abs(fract(rg.x) - 0.5))) * smoothstep(0.0, 0.1, ry) * (1.0 - smoothstep(0.1, 0.32, ry)) * step(0.55, rh);
-    view += float3(0.8, 0.85, 1.0) * streak * 0.05;
     view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
 
     // the painted cabin
     float glass = 1.0 - masks2.sample(linearSampler, ip / sz).r;
     float3 cab = pdUntonemap(cabin.sample(linearSampler, ip / sz).rgb);
     // light from lamps going by washes over the cabin from the left
-    float pass = pow(0.5 + 0.5 * sin(t * 1.3 - 1.0), 10.0) * (1.0 + 0.4 * u.bass);
+    float pass = 0.0;
+    for (int k = 0; k < 4; k++) {
+        float lz = (float(k) + 1.0) * 30.0 - fmod(t * 14.0, 30.0);
+        pass += exp(-pow(lz - 3.0, 2.0) * 0.08);                  // the lamp passing overhead
+    }
+    pass *= 1.0 + 0.4 * u.bass;
     float fromLeft = smoothstep(0.8, -0.7, p.x) * smoothstep(-0.45, 0.2, p.y);
     float3 lit = cab * (1.0 + float3(1.0, 0.66, 0.36) * pass * 0.45 * fromLeft);
     // infotainment: the song's LED bars (title drawn natively above them)
