@@ -90,8 +90,8 @@ final class LyricsListener: @unchecked Sendable {
         stop()
         if #available(macOS 26.0, *) {
             Task {
-                if let locale = await AnalyzerSession.bestLocale(candidates) {
-                    let s = AnalyzerSession(base: videoTime)
+                if let (locale, dictation) = await AnalyzerSession.bestLocale(candidates) {
+                    let s = AnalyzerSession(base: videoTime, dictation: dictation)
                     s.onWords = { [weak self] words in self?.onWords?(words) }
                     s.onProblem = { [weak self] message in self?.onProblem?(message) }
                     do {
@@ -103,7 +103,8 @@ final class LyricsListener: @unchecked Sendable {
                             self.startTime = videoTime
                             self.totalFed = 0
                         }
-                        DispatchQueue.main.async { completion(.listening(locale.identifier(.bcp47) + ", SpeechAnalyzer")) }
+                        let engine = dictation ? "DictationTranscriber" : "SpeechTranscriber"
+                        DispatchQueue.main.async { completion(.listening(locale.identifier(.bcp47) + ", " + engine)) }
                         return
                     } catch {
                         print("LISTENER SpeechAnalyzer couldn't start: \(error)")
@@ -259,23 +260,56 @@ final class AnalyzerSession: @unchecked Sendable {
     var onWords: (([LyricsAligner.Word]) -> Void)?
     var onProblem: ((String) -> Void)?
 
-    init(base: Double) { self.base = base }
+    private let dictation: Bool
 
-    static func bestLocale(_ candidates: [String]) async -> Locale? {
-        let supported = await SpeechTranscriber.supportedLocales
+    init(base: Double, dictation: Bool) {
+        self.base = base
+        self.dictation = dictation
+    }
+
+    /// The best supported locale: SpeechTranscriber (the new long-form model)
+    /// first, then DictationTranscriber, which runs on more Macs.
+    static func bestLocale(_ candidates: [String]) async -> (Locale, Bool)? {
+        let speech = await SpeechTranscriber.supportedLocales
+        let dictation = await DictationTranscriber.supportedLocales
+        print("LISTENER SpeechTranscriber locales: \(speech.count) (available \(SpeechTranscriber.isAvailable)), DictationTranscriber locales: \(dictation.count)")
         for id in candidates {
-            if let match = supported.first(where: { $0.identifier(.bcp47) == id }) { return match }
+            if let match = speech.first(where: { $0.identifier(.bcp47) == id }) { return (match, false) }
+        }
+        for id in candidates {
+            if let match = dictation.first(where: { $0.identifier(.bcp47) == id }) { return (match, true) }
         }
         return nil
     }
 
     func start(locale: Locale) async throws {
+        if dictation {
+            let transcriber = DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [],
+                                                   reportingOptions: [], attributeOptions: [.audioTimeRange])
+            try await install([transcriber], locale: locale)
+            let analyzer = SpeechAnalyzer(modules: [transcriber])
+            format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+            let (stream, builder) = AsyncStream<AnalyzerInput>.makeStream()
+            self.analyzer = analyzer
+            self.builder = builder
+            let base = self.base
+            resultsTask = Task { [weak self] in
+                do {
+                    for try await result in transcriber.results {
+                        let words = Self.words(in: result.text, base: base)
+                        if !words.isEmpty, let self { DispatchQueue.main.async { self.onWords?(words) } }
+                    }
+                } catch {
+                    print("LISTENER dictation analysis stopped: \(error)")
+                    if let self { DispatchQueue.main.async { self.onProblem?("speech analysis stopped: \(error.localizedDescription)") } }
+                }
+            }
+            try await analyzer.start(inputSequence: stream)
+            return
+        }
         let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [],
                                             attributeOptions: [.audioTimeRange])
-        if let install = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-            print("LISTENER downloading the \(locale.identifier) speech model")
-            try await install.downloadAndInstall()
-        }
+        try await install([transcriber], locale: locale)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
         let (stream, builder) = AsyncStream<AnalyzerInput>.makeStream()
@@ -285,17 +319,7 @@ final class AnalyzerSession: @unchecked Sendable {
         resultsTask = Task { [weak self] in
             do {
                 for try await result in transcriber.results {
-                    var words: [LyricsAligner.Word] = []
-                    for run in result.text.runs {
-                        guard let range = run.audioTimeRange else { continue }
-                        let text = String(result.text[run.range].characters)
-                        let parts = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-                        let start = range.start.seconds
-                        let duration = max(range.duration.seconds, 0.05)
-                        for (i, p) in parts.enumerated() {
-                            words.append(.init(time: base + start + duration * Double(i) / Double(max(parts.count, 1)), text: p))
-                        }
-                    }
+                    let words = Self.words(in: result.text, base: base)
                     if !words.isEmpty, let self {
                         let heard = words
                         DispatchQueue.main.async { self.onWords?(heard) }
@@ -307,6 +331,29 @@ final class AnalyzerSession: @unchecked Sendable {
             }
         }
         try await analyzer.start(inputSequence: stream)
+    }
+
+    private func install(_ modules: [any SpeechModule], locale: Locale) async throws {
+        if let request = try await AssetInventory.assetInstallationRequest(supporting: modules) {
+            print("LISTENER downloading the \(locale.identifier) speech model")
+            try await request.downloadAndInstall()
+        }
+    }
+
+    /// Timed words from a result's text (runs carry their audio time range).
+    static func words(in text: AttributedString, base: Double) -> [LyricsAligner.Word] {
+        var words: [LyricsAligner.Word] = []
+        for run in text.runs {
+            guard let range = run.audioTimeRange else { continue }
+            let chunk = String(text[run.range].characters)
+            let parts = chunk.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let start = range.start.seconds
+            let duration = max(range.duration.seconds, 0.05)
+            for (i, p) in parts.enumerated() {
+                words.append(.init(time: base + start + duration * Double(i) / Double(max(parts.count, 1)), text: p))
+            }
+        }
+        return words
     }
 
     /// Converts the tap's mono float audio to the analyzer's format and queues it.
