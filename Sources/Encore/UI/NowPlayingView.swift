@@ -293,27 +293,50 @@ struct GradientButtonStyle: ButtonStyle {
 }
 
 /// The Encore logo mark (play triangle + two sound arcs), drawn natively.
+/// Encore's mark: a play button inside a loop that comes round again (an
+/// encore). Drawn from the app icon's geometry (design/AppIcon.html, 1024 px).
+enum EncoreMarkGeometry {
+    /// The loop's centre line (stroke it 74 units wide, round caps).
+    static func loop(_ p: (Double, Double) -> CGPoint, _ s: Double) -> Path {
+        var path = Path()
+        path.addArc(center: p(512, 516), radius: 252 * s, startAngle: .degrees(28), endAngle: .degrees(312), clockwise: false)
+        return path
+    }
+    static func arrow(_ p: (Double, Double) -> CGPoint) -> Path {
+        var path = Path()
+        path.move(to: p(721.5, 271.4)); path.addLine(to: p(741.6, 383.6)); path.addLine(to: p(627.8, 375.4)); path.closeSubpath()
+        return path
+    }
+    static func play(_ p: (Double, Double) -> CGPoint) -> Path {
+        var path = Path()
+        path.move(to: p(462, 398)); path.addLine(to: p(632, 504)); path.addLine(to: p(462, 610)); path.closeSubpath()
+        return path
+    }
+    /// Maps the mark's 1024-unit space into `size`, fitted and centred.
+    static func mapping(_ size: CGSize) -> (s: Double, p: (Double, Double) -> CGPoint) {
+        let s = min(size.width, size.height) / 600
+        let ox = size.width / 2 - 507 * s, oy = size.height / 2 - 518 * s
+        return (s, { x, y in CGPoint(x: ox + x * s, y: oy + y * s) })
+    }
+}
+
 struct EncoreMark: View {
     var body: some View {
         Canvas { ctx, size in
-            let s = min(size.width, size.height) / 620
-            let ox = (size.width - 620 * s) / 2 - 200 * s, oy = (size.height - 520 * s) / 2 - 260 * s
-            func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: ox + x * s, y: oy + y * s) }
-            let shading = GraphicsContext.Shading.linearGradient(
-                Gradient(colors: [Color(red: 1, green: 0.48, blue: 0.35), Color(red: 0.94, green: 0.22, blue: 0.56), Color(red: 0.55, green: 0.33, blue: 1)]),
-                startPoint: p(260, 300), endPoint: p(780, 740))
-            var tri = Path()
-            tri.move(to: p(290, 340)); tri.addLine(to: p(290, 684)); tri.addLine(to: p(560, 512)); tri.closeSubpath()
-            ctx.fill(tri, with: shading)
-            ctx.stroke(tri, with: shading, style: StrokeStyle(lineWidth: 64 * s, lineJoin: .round))
-            var arc1 = Path()
-            arc1.addArc(center: p(400, 512), radius: 260 * s, startAngle: .degrees(-38), endAngle: .degrees(38), clockwise: false)
-            ctx.stroke(arc1, with: shading, style: StrokeStyle(lineWidth: 56 * s, lineCap: .round))
-            var arc2 = Path()
-            arc2.addArc(center: p(400, 512), radius: 350 * s, startAngle: .degrees(-38), endAngle: .degrees(38), clockwise: false)
-            var faded = ctx
-            faded.opacity = 0.55
-            faded.stroke(arc2, with: shading, style: StrokeStyle(lineWidth: 56 * s, lineCap: .round))
+            let (s, p) = EncoreMarkGeometry.mapping(size)
+            let ring = GraphicsContext.Shading.linearGradient(
+                Gradient(colors: [Color(red: 1, green: 0.6, blue: 0.32), Color(red: 1, green: 0.24, blue: 0.55), Color(red: 0.54, green: 0.36, blue: 1)]),
+                startPoint: p(260, 780), endPoint: p(760, 260))
+            ctx.stroke(EncoreMarkGeometry.loop(p, s), with: ring, style: StrokeStyle(lineWidth: 74 * s, lineCap: .round))
+            let arrow = EncoreMarkGeometry.arrow(p)
+            let violet = Color(red: 0.56, green: 0.38, blue: 1)
+            ctx.fill(arrow, with: .color(violet))
+            ctx.stroke(arrow, with: .color(violet), style: StrokeStyle(lineWidth: 22 * s, lineJoin: .round))
+            let play = EncoreMarkGeometry.play(p)
+            let white = GraphicsContext.Shading.linearGradient(Gradient(colors: [.white, Color(red: 1, green: 0.82, blue: 0.9)]),
+                                                                startPoint: p(460, 400), endPoint: p(630, 610))
+            ctx.fill(play, with: white)
+            ctx.stroke(play, with: white, style: StrokeStyle(lineWidth: 26 * s, lineJoin: .round))
         }
     }
 }

@@ -1511,7 +1511,7 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
             col += float3(0.7, 0.68, 0.6) * pow(g, 9.0) * exp(-abs(bx - 0.72) * 18.0) * 1.8;
         } else if (u < -5.6) {
             // grass, shrubs and rocks on the slope, gold under the lamps
-            float2 g = float2(s, h * 1.6);
+            float2 g = float2(s * 0.6, h * 1.6);
             float bush = fbm3(g * 0.45);
             float clump = nwLeafNoise(g * 1.3);
             float3 grass = mix(float3(0.025, 0.055, 0.045), float3(0.05, 0.105, 0.075), smoothstep(0.4, 0.6, clump));
@@ -1519,7 +1519,7 @@ static float3 nwWorld(float2 ip, float t, float bass, float pxs) {
             grass = mix(grass, mix(float3(0.02, 0.05, 0.05), float3(0.07, 0.14, 0.11), smoothstep(0.45, 0.65, clump)), shrub);
             float rock = smoothstep(0.7, 0.74, fbm3(g * 0.3 + 11.0)) * step(h, 3.0);
             grass = mix(grass, float3(0.16, 0.15, 0.17) * (0.8 + 0.4 * clump), rock);
-            col = mix(grass, float3(0.50, 0.50, 0.20) * (0.6 + 0.6 * clump), smoothstep(0.15, 0.9, lampL) * 0.85);
+            col = mix(grass, float3(0.36, 0.37, 0.15) * (0.7 + 0.5 * clump), smoothstep(0.2, 1.0, lampL) * 0.6);
             col = mix(col, haze, fog);
         } else {
             float au = abs(u);

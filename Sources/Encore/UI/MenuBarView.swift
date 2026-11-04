@@ -94,7 +94,7 @@ struct MenuBarLabel: View {
     var body: some View {
         let player = model.player
         HStack(spacing: 4) {
-            Image(systemName: player.isPlaying ? "waveform" : (player.hasMedia ? "pause.circle" : "play.circle"))
+            Image(nsImage: MenuBarIcon.image(playing: player.isPlaying))
             if model.settings.showTitleInMenuBar, player.hasMedia {
                 Text(String(player.title.prefix(24)) + (player.title.count > 24 ? "…" : ""))
             }
@@ -102,5 +102,43 @@ struct MenuBarLabel: View {
         .onAppear {
             if model.openMainWindow == nil { model.openMainWindow = { openWindow(id: "main") } }
         }
+    }
+}
+
+/// The menu bar icon: Encore's mark as a template image (the system tints it).
+/// The play button is solid while something plays and drawn in outline otherwise.
+@MainActor
+enum MenuBarIcon {
+    private static var cache: [Bool: NSImage] = [:]
+
+    static func image(playing: Bool) -> NSImage {
+        if let image = cache[playing] { return image }
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: true) { rect in
+            guard let cg = NSGraphicsContext.current?.cgContext else { return false }
+            let (s, p) = EncoreMarkGeometry.mapping(CGSize(width: rect.width, height: rect.height))
+            cg.setFillColor(NSColor.black.cgColor)
+            cg.setStrokeColor(NSColor.black.cgColor)
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            cg.setLineWidth(80 * s)
+            cg.addPath(EncoreMarkGeometry.loop(p, s).cgPath)
+            cg.strokePath()
+            cg.setLineWidth(24 * s)
+            cg.addPath(EncoreMarkGeometry.arrow(p).cgPath)
+            cg.drawPath(using: .fillStroke)
+            cg.addPath(EncoreMarkGeometry.play(p).cgPath)
+            if playing {
+                cg.setLineWidth(30 * s)
+                cg.drawPath(using: .fillStroke)
+            } else {
+                cg.setLineWidth(46 * s)
+                cg.strokePath()
+            }
+            return true
+        }
+        image.isTemplate = true
+        cache[playing] = image
+        return image
     }
 }

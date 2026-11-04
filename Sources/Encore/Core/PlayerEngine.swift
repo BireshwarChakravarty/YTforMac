@@ -264,8 +264,12 @@ final class PlayerEngine: NSObject {
         case "state":
             apply(state: body)
         case "remote":
-            if let name = body["command"] as? String, let command = RemoteCommand(name: name) {
-                handleRemote(command)
+            if let name = body["command"] as? String {
+                if name == "seekTo", let time = body["time"] as? Double {
+                    handleRemote(.seek(time))
+                } else if let command = RemoteCommand(name: name) {
+                    handleRemote(command)
+                }
             }
         case "browse":
             if let s = body["url"] as? String, let url = URL(string: s) { onBrowseRequest?(url) }

@@ -232,22 +232,26 @@ enum Scripts {
       let holdAutoplay = location.hash.indexOf('encore-hold') !== -1;
 
       // ---------- Media Session ----------
-      // Encore owns the transport. The page's own handlers are ignored and our
-      // handlers forward to native, which de-duplicates against the
-      // MPRemoteCommandCenter path so every key press acts exactly once.
+      // This page's media session is Encore's one entry in Control Center's Now
+      // Playing (Encore doesn't publish a second one). Encore owns the transport:
+      // the page's own handlers are ignored and ours forward to native, which
+      // de-duplicates so every key press acts exactly once. No skip-10s buttons,
+      // so Control Center shows previous / next.
       try {
         const ms = navigator.mediaSession;
         if (ms && ms.setActionHandler) {
           const original = ms.setActionHandler.bind(ms);
-          const owned = { play: 'play', pause: 'pause', nexttrack: 'next', previoustrack: 'previous',
-                          seekforward: 'seekForward', seekbackward: 'seekBackward', stop: 'pause' };
+          const owned = { play: 'play', pause: 'pause', nexttrack: 'next', previoustrack: 'previous', stop: 'pause' };
+          const blocked = { seekforward: 1, seekbackward: 1, seekto: 1 };
           ms.setActionHandler = function (action, handler) {
-            if (action in owned) return;
+            if (action in owned || action in blocked) return;
             try { original(action, handler); } catch (e) {}
           };
           Object.keys(owned).forEach((action) => {
             try { original(action, () => post('remote', { command: owned[action] })); } catch (e) {}
           });
+          try { original('seekforward', null); original('seekbackward', null); } catch (e) {}
+          try { original('seekto', (d) => { if (d && isFinite(d.seekTime)) post('remote', { command: 'seekTo', time: d.seekTime }); }); } catch (e) {}
         }
       } catch (e) {}
 
