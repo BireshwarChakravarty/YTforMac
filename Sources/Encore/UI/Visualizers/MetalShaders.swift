@@ -1245,7 +1245,7 @@ static float4 lofiScene(float2 fc, constant Uniforms &u, texture2d<float> specTe
 // Built from a layered painting of a 2024-25 Creta at night (Resources/NightDrive):
 // the exterior painting, the road layer, the cabin, and masks for the lake,
 // leaves, sky, glass and road. Brought to life with gentle, layer-aware motion:
-// the road streams towards you, leaves stir, the lake ripples, mist drifts,
+// the road streams towards you, street lamps sweep overhead, leaves stir, the lake ripples, mist drifts,
 // clouds breathe, stars twinkle, lamps pulse with the music, rain falls and
 // wipers sweep; passing light washes over the dash and the screens show the
 // song and speed. All maths is in the painting's pixel space (1920x1080).
@@ -1327,6 +1327,47 @@ static float3 pdExterior(float2 ip, float t, constant Uniforms &u,
             col = mix(col, white, (1.0 - smoothstep(-0.8, 0.8, post)) * smoothstep(3.5, 7.0, d));
         }
     }
+    // street lamps on the left verge, every 30 m above the pools of light:
+    // they rise out of the distance, sweep overhead and out past the pillar
+    for (int i = 5; i >= 0; i--) {
+        float zl = 30.0 * (float(i) + 1.0) - fmod(dist, 30.0);
+        float d = 330.0 / zl;
+        if (d < 1.6) continue;
+        float fade = smoothstep(1.6, 4.0, d);
+        float baseX = 600.0 + 3.73 * d - 6.9 * d;
+        float baseY = 350.0 + d;
+        float top = baseY - 11.0 * d;
+        float2 head = float2(600.0 + 3.73 * d - 4.6 * d, top + 0.35 * d);
+        float pw = max(0.13 * d, 0.7);
+        float pole = sdBox(q - float2(baseX, (baseY + top) * 0.5), float2(pw * 0.5, (baseY - top) * 0.5), 0.0);
+        float2 a0 = float2(baseX, top), ab = head - a0;
+        float2 ap = q - a0;
+        float arm = length(ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0)) - pw * 0.3;
+        float frame = min(pole, arm);
+        float3 metal = float3(0.03, 0.033, 0.04) + warmLight * 0.05 * smoothstep(pw * 0.5, -pw * 0.5, q.x - baseX);
+        col = mix(col, metal, (1.0 - smoothstep(-0.7, 0.7, frame)) * fade * 0.92);
+        float hd = length((q - head) * float2(0.8, 1.7));
+        float core = 1.0 - smoothstep(0.38 * d - 0.6, 0.38 * d + 0.9, hd);
+        col = mix(col, float3(1.0, 0.86, 0.62), core * fade);
+        col += warmLight * (exp(-hd / (1.6 * d)) * 0.32 + exp(-hd / (7.0 * d)) * 0.07 * (0.35 + m.g)) * fade;
+    }
+    // now and then a car comes the other way, its lights growing on the wet road
+    float zc = 260.0 - fmod(t + 20.0, 46.0) * 26.0;
+    if (zc > 4.0) {
+        float d = 330.0 / zc;
+        float fade = smoothstep(1.2, 3.0, d) * (1.0 - smoothstep(55.0, 75.0, d));
+        for (int s = -1; s <= 1; s += 2) {
+            float2 hp = float2(600.0 + 3.73 * d + (0.25 + 0.085 * float(s)) * 10.5 * d, 350.0 + d - 0.45 * d);
+            float rad = max(0.2 * d, 0.6);
+            float hd = length(q - hp);
+            float3 white = float3(1.0, 0.96, 0.88);
+            col = mix(col, white, (1.0 - smoothstep(rad * 0.6, rad * 1.3, hd)) * fade);
+            col += white * exp(-hd / (rad * 5.0)) * 0.22 * fade;
+            float below = q.y - hp.y;
+            if (below > 0.0)
+                col += white * exp(-abs(q.x - hp.x) / (rad * 1.3)) * exp(-below / (0.9 * d)) * 0.12 * fade;
+        }
+    }
     // rain rushing towards the glass out of the dark (lit by the lamps)
     float2 rv = q - float2(600.0, 340.0);
     float rr = length(rv);
@@ -1382,6 +1423,14 @@ static float4 pdScene(float2 fc, constant Uniforms &u, texture2d<float> specTex,
         view = mix(view, sharp * 1.12 + 0.02, r.z * 0.75);
     }
     view *= 0.93 + 0.07 * (1.0 - r.z);
+    // each lamp going overhead lights up the drops and glances off the glass
+    float overhead = 0.0;
+    for (int k = 0; k < 4; k++) {
+        float lz = (float(k) + 1.0) * 30.0 - fmod(t * 14.0, 30.0);
+        overhead += exp(-pow(lz - 6.0, 2.0) * 0.05);
+    }
+    float3 sodium = float3(1.0, 0.66, 0.34);
+    view += sodium * overhead * (r.z * 0.35 + 0.035 * smoothstep(0.5, -0.6, p.x + p.y * 0.6));
     view = mix(view, float3(0.012, 0.012, 0.018), clamp(0.5 - blade / px, 0.0, 1.0) * 0.95);
 
     // the painted cabin
